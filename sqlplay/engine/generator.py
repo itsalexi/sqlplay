@@ -152,6 +152,30 @@ def noun(t: str) -> str:
     return t.replace("_", " ")
 
 
+def plural(t: str) -> str:
+    n = noun(t)
+    if n.endswith(("s", "x")):
+        return n
+    if n.endswith("y") and n[-2:-1] not in "aeiou":
+        return n[:-1] + "ies"
+    return n + "s"
+
+
+def human(col: str) -> str:
+    """suppliername -> supplier name, mentorid -> mentor, orderdate -> order date."""
+    c = col.replace("_", " ")
+    for suffix in ("name", "date", "title"):
+        if c.endswith(suffix) and len(c) > len(suffix) and not c.endswith(" " + suffix):
+            return c[: -len(suffix)] + " " + suffix
+    if c.endswith("id") and len(c) > 2:
+        return c[:-2].strip()
+    return c
+
+
+def label(col: str) -> str:
+    return human(col).title()
+
+
 def fullname(alias: str, t: Table) -> str:
     return f"CONCAT({alias}.{t.first.name}, ' ', {alias}.{t.last.name})"
 
@@ -277,15 +301,15 @@ def t_shape_distinct(ctx: Ctx) -> Spec | None:
         return None
     return dict(
         question=f"Which {cat.name} values have at least one {noun(t.name)} with a {n.name} above {fmt(x)}? "
-        f"List each {cat.name} once, labelled \"{cat.name.title()}\", sorted A to Z.",
-        answer=f'SELECT DISTINCT {cat.name} AS "{cat.name.title()}"\nFROM {t.name}\nWHERE {n.name} > {lit(x)}\nORDER BY 1;',
-        columns=[cat.name.title()],
+        f"List each {cat.name} once, labelled \"{label(cat.name)}\", sorted A to Z.",
+        answer=f'SELECT DISTINCT {cat.name} AS "{label(cat.name)}"\nFROM {t.name}\nWHERE {n.name} > {lit(x)}\nORDER BY 1;',
+        columns=[label(cat.name)],
         ordered=True,
         order_note=f"{cat.name} A-Z",
         hints=[
             "'List each once' means duplicates must go. Which keyword removes repeated rows?",
-            f"SELECT DISTINCT ____ AS \"{cat.name.title()}\" FROM {t.name} WHERE ____ > ____ ORDER BY ____;",
-            f"SELECT DISTINCT {cat.name} AS \"{cat.name.title()}\" FROM {t.name} WHERE {n.name} > {fmt(x)} ORDER BY ...",
+            f"SELECT DISTINCT ____ AS \"{label(cat.name)}\" FROM {t.name} WHERE ____ > ____ ORDER BY ____;",
+            f"SELECT DISTINCT {cat.name} AS \"{label(cat.name)}\" FROM {t.name} WHERE {n.name} > {fmt(x)} ORDER BY ...",
         ],
         explain="WHERE first keeps the matching rows, then DISTINCT collapses repeated values into one.",
     )
@@ -299,7 +323,7 @@ def t_agg_minmax(ctx: Ctx) -> Spec | None:
     v = ctx.rng.choice(vals)
     n = ctx.rng.choice(t.nums)
     return dict(
-        question=f"For {noun(t.name)} rows in the '{v}' {cat.name}, find the highest {n.name}, the lowest "
+        question=f"For {plural(t.name)} in the '{v}' {cat.name}, find the highest {n.name}, the lowest "
         f"{n.name}, and how many rows there are. Label them \"Highest\", \"Lowest\" and \"How Many\".",
         answer=f'SELECT MAX({n.name}) AS "Highest", MIN({n.name}) AS "Lowest", COUNT(*) AS "How Many"\n'
         f"FROM {t.name}\nWHERE {cat.name} = {lit(v)};",
@@ -325,7 +349,7 @@ def t_agg_avg(ctx: Ctx) -> Spec | None:
     if x is None:
         return None
     return dict(
-        question=f"Among {noun(t.name)} rows with a {other.name} of {fmt(x)} or more, what is the average "
+        question=f"Among {plural(t.name)} with a {other.name} of {fmt(x)} or more, what is the average "
         f"{n.name} (rounded to 2 decimals) and the total number of rows? Label them \"Average\" and \"Total\".",
         answer=f'SELECT ROUND(AVG({n.name}), 2) AS "Average", COUNT(*) AS "Total"\nFROM {t.name}\nWHERE {other.name} >= {lit(x)};',
         columns=["Average", "Total"],
@@ -345,18 +369,18 @@ def t_sub_above_avg(ctx: Ctx) -> Spec | None:
     t = ctx.rng.choice(cands)
     n = ctx.rng.choice(t.nums)
     return dict(
-        question=f"Which {noun(t.name)} rows have a {n.name} higher than the average {n.name} of all "
-        f"{noun(t.name)} rows? Show {t.label.name} and {n.name} labelled \"Name\" and \"{n.name.title()}\", "
+        question=f"Which {plural(t.name)} have a {n.name} higher than the average {n.name} of all "
+        f"{plural(t.name)}? Show {t.label.name} and {n.name} labelled \"Name\" and \"{label(n.name)}\", "
         f"highest {n.name} first (ties: Name A to Z).",
-        answer=f'SELECT {t.label.name} AS "Name", {n.name} AS "{n.name.title()}"\nFROM {t.name}\n'
+        answer=f'SELECT {t.label.name} AS "Name", {n.name} AS "{label(n.name)}"\nFROM {t.name}\n'
         f"WHERE {n.name} > (SELECT AVG({n.name}) FROM {t.name})\nORDER BY 2 DESC, 1;",
-        columns=["Name", n.name.title()],
+        columns=["Name", label(n.name)],
         ordered=True,
         order_note=f"{n.name} highest first, then Name",
         hints=[
             "The average is one number you don't know yet. Compute it with a subquery and compare each row to it.",
             f"WHERE {n.name} > (SELECT ____({n.name}) FROM ____)",
-            f"SELECT {t.label.name} AS \"Name\", {n.name} AS \"{n.name.title()}\" FROM {t.name} WHERE {n.name} > (SELECT AVG({n.name}) FROM {t.name}) ORDER BY ...",
+            f"SELECT {t.label.name} AS \"Name\", {n.name} AS \"{label(n.name)}\" FROM {t.name} WHERE {n.name} > (SELECT AVG({n.name}) FROM {t.name}) ORDER BY ...",
         ],
         explain="The subquery runs first and returns the average; the outer WHERE keeps rows above it.",
     )
@@ -394,7 +418,7 @@ def t_sub_beats_cat(ctx: Ctx) -> Spec | None:
     n = ctx.rng.choice(t.nums)
     v = ctx.rng.choice(vals)
     return dict(
-        question=f"List the {noun(t.name)} rows whose {n.name} is greater than the highest {n.name} in the "
+        question=f"List the {plural(t.name)} whose {n.name} is greater than the highest {n.name} in the "
         f"'{v}' {cat.name}. Show {t.label.name}, {cat.name} and {n.name}, sorted by {n.name} highest first, "
         f"then {t.label.name} A to Z.",
         answer=f"SELECT {t.label.name}, {cat.name}, {n.name}\nFROM {t.name}\n"
@@ -428,8 +452,8 @@ def t_sub_lookup(ctx: Ctx) -> Spec | None:
     if len(ctx.q(f"SELECT 1 FROM {t.name} WHERE {t.label.name} = {lit(item)}")) != 1:
         return None
     return dict(
-        question=f"Find the other {noun(t.name)} rows in the same {cat.name} as '{item}' whose {n.name} is "
-        f"above the average {n.name} of ALL {noun(t.name)} rows. Do not include '{item}' itself. "
+        question=f"Find the other {plural(t.name)} in the same {cat.name} as '{item}' whose {n.name} is "
+        f"above the average {n.name} of ALL {plural(t.name)}. Do not include '{item}' itself. "
         f"Show {t.label.name} and {n.name}, sorted by {t.label.name} A to Z.",
         answer=f"SELECT {t.label.name}, {n.name}\nFROM {t.name}\n"
         f"WHERE {cat.name} = (SELECT {cat.name} FROM {t.name} WHERE {t.label.name} = {lit(item)})\n"
@@ -463,7 +487,7 @@ def t_sub_profit(ctx: Ctx) -> Spec | None:
     t = ctx.rng.choice(cands)
     sell, cost = _two_money(t)
     return dict(
-        question=f"Profit for a {noun(t.name)} is {sell.name} minus {cost.name}. Which {noun(t.name)} rows make "
+        question=f"Profit for a {noun(t.name)} is {sell.name} minus {cost.name}. Which {plural(t.name)} make "
         f"more profit than the average profit? Show {t.label.name} labelled \"Name\" and the profit labelled "
         f"\"Profit\", highest profit first (ties: Name A to Z).",
         answer=f'SELECT {t.label.name} AS "Name", {sell.name} - {cost.name} AS "Profit"\nFROM {t.name}\n'
@@ -556,7 +580,6 @@ def t_join_chain_person(ctx: Ctx) -> Spec | None:
         paths = [p for p in _paths(ctx, person.name) if len(p) >= 2]
         ctx.rng.shuffle(paths)
         for path in paths:
-            end = path[-1][2] if path[-1][2] not in {person.name} | {e[0] for e in path[:-1]} else path[-1][0]
             _, alias = _join_sql(person.name, path)
             end = list(alias)[-1]
             target = ctx.tables[end]
@@ -571,16 +594,16 @@ def t_join_chain_person(ctx: Ctx) -> Spec | None:
                 continue
             fn, ln = ctx.rng.choice(names)
             sql = (
-                f'SELECT DISTINCT {a_end}.{target.label.name} AS "{target.label.name.title()}"\n{joins}\n'
+                f'SELECT DISTINCT {a_end}.{target.label.name} AS "{label(target.label.name)}"\n{joins}\n'
                 f"WHERE t0.{person.first.name} = {lit(fn)} AND t0.{person.last.name} = {lit(ln)}\nORDER BY 1;"
             )
             route = " -> ".join([person.name] + [list(alias)[i] for i in range(1, len(alias))])
             return dict(
-                question=f"Which {noun(end)} {target.label.name}s are connected to {noun(person.name)} "
-                f"{fn.title()} {ln.title()}? List each {target.label.name} once, labelled "
-                f"\"{target.label.name.title()}\", sorted A to Z. (Names are stored in CAPITALS.)",
+                question=f"Follow the links {route}: which {plural(end)} are connected to {noun(person.name)} "
+                f"{fn} {ln}? List each {human(target.label.name)} once, labelled "
+                f"\"{label(target.label.name)}\", sorted A to Z.",
                 answer=sql,
-                columns=[target.label.name.title()],
+                columns=[label(target.label.name)],
                 ordered=True,
                 order_note=f"{target.label.name} A-Z",
                 hints=[
@@ -604,7 +627,7 @@ def t_join_extreme(ctx: Ctx) -> Spec | None:
             joins, alias = _join_sql(person.name, path)
             end = list(alias)[-1]
             target = ctx.tables[end]
-            if not target.nums or target.is_person:
+            if not target.nums or target.is_person or not target.label:
                 continue
             n = ctx.rng.choice(target.nums)
             fn = ctx.rng.choice(["MIN", "MAX"])
@@ -614,8 +637,8 @@ def t_join_extreme(ctx: Ctx) -> Spec | None:
                 f"WHERE {alias[end]}.{n.name} = (SELECT {fn}({n.name}) FROM {end})\nORDER BY 1;"
             )
             return dict(
-                question=f"Which {noun(person.name)} rows are connected to the {noun(end)} with the "
-                f"{'lowest' if fn == 'MIN' else 'highest'} {n.name}? Show each person's full name (first name, "
+                question=f"Following the links {' -> '.join(alias)}, which {plural(person.name)} are connected to "
+                f"the {noun(end)} with the {'lowest' if fn == 'MIN' else 'highest'} {n.name}? Show each person's full name (first name, "
                 f"a space, last name) once, labelled \"Name\", sorted A to Z.",
                 answer=sql,
                 columns=["Name"],
@@ -646,7 +669,7 @@ def t_left_never(ctx: Ctx) -> Spec | None:
             continue
         what = lab or "full name (first name, a space, last name)"
         return dict(
-            question=f"Which {noun(pt)} rows never appear in {ct}? Show their {what} labelled \"{noun(pt).title()}\", "
+            question=f"Which {plural(pt)} never appear in the {ct} table? Show their {what} labelled \"{noun(pt).title()}\", "
             f"sorted A to Z.",
             answer=f'SELECT {sel} AS "{noun(pt).title()}"\nFROM {pt} p\nLEFT JOIN {ct} c ON p.{pc} = c.{cc}\n'
             f"WHERE c.{cc} IS NULL\nORDER BY 1;",
@@ -680,7 +703,7 @@ def t_self_referrers(ctx: Ctx) -> Spec | None:
     t, c, pk = ctx.rng.choice(refs)
     sel = fullname("a", t) if t.is_person else f"a.{t.label.name}"
     return dict(
-        question=f"Which {noun(t.name)} rows are pointed to by another row's {c.name} column? Show each one once: "
+        question=f"Which {plural(t.name)} appear as the {human(c.name) + ('' if human(c.name) == c.name else f' ({c.name})')} of at least one other {noun(t.name)}? Show each one once: "
         f"the {pk} labelled \"Number\" and the {'full name (first name, a space, last name)' if t.is_person else t.label.name} "
         f"labelled \"Name\", sorted by Number.",
         answer=f'SELECT DISTINCT a.{pk} AS "Number", {sel} AS "Name"\nFROM {t.name} a\n'
@@ -705,11 +728,11 @@ def t_self_pairs(ctx: Ctx) -> Spec | None:
     t, c, pk = ctx.rng.choice(refs)
     return dict(
         question=f"For every {noun(t.name)} that has a {c.name}, show their full name labelled \"Person\" and the "
-        f"full name of the {noun(t.name)} their {c.name} points to, labelled \"{c.name.title()}\". "
+        f"full name of the {noun(t.name)} their {c.name} points to, labelled \"{label(c.name)}\". "
         f"Full names are first name, a space, last name. Sort by Person A to Z.",
-        answer=f'SELECT {fullname("a", t)} AS "Person", {fullname("b", t)} AS "{c.name.title()}"\n'
+        answer=f'SELECT {fullname("a", t)} AS "Person", {fullname("b", t)} AS "{label(c.name)}"\n'
         f"FROM {t.name} a\nJOIN {t.name} b ON a.{c.name} = b.{pk}\nORDER BY 1, 2;",
-        columns=["Person", c.name.title()],
+        columns=["Person", label(c.name)],
         ordered=True,
         order_note="Person A-Z",
         hints=[
@@ -728,17 +751,17 @@ def t_group_count(ctx: Ctx) -> Spec | None:
         return None
     t, cat = ctx.rng.choice(cands)
     return dict(
-        question=f"How many {noun(t.name)} rows are there in each {cat.name}? Show the {cat.name} labelled "
-        f"\"{cat.name.title()}\" and the count labelled \"How Many\", sorted by {cat.name} A to Z.",
-        answer=f'SELECT {cat.name} AS "{cat.name.title()}", COUNT(*) AS "How Many"\nFROM {t.name}\n'
+        question=f"How many {plural(t.name)} are there in each {cat.name}? Show the {cat.name} labelled "
+        f"\"{label(cat.name)}\" and the count labelled \"How Many\", sorted by {cat.name} A to Z.",
+        answer=f'SELECT {cat.name} AS "{label(cat.name)}", COUNT(*) AS "How Many"\nFROM {t.name}\n'
         f"GROUP BY {cat.name}\nORDER BY 1;",
-        columns=[cat.name.title(), "How Many"],
+        columns=[label(cat.name), "How Many"],
         ordered=True,
         order_note=f"{cat.name} A-Z",
         hints=[
             "GROUP BY makes one pile per distinct value, then COUNT squashes each pile separately.",
             f"SELECT ____, COUNT(*) FROM {t.name} GROUP BY ____ ORDER BY 1;",
-            f"SELECT {cat.name} AS \"{cat.name.title()}\", COUNT(*) AS \"How Many\" FROM {t.name} GROUP BY ... ORDER BY 1;",
+            f"SELECT {cat.name} AS \"{label(cat.name)}\", COUNT(*) AS \"How Many\" FROM {t.name} GROUP BY ... ORDER BY 1;",
         ],
         explain="Without GROUP BY, COUNT gives one number for the whole table. GROUP BY splits rows into "
         "groups first, so you get one row per group. Non-aggregated columns in SELECT must be in GROUP BY.",
@@ -752,18 +775,18 @@ def t_group_having(ctx: Ctx) -> Spec | None:
     t, cat = ctx.rng.choice(cands)
     n = ctx.rng.choice(t.nums)
     return dict(
-        question=f"For each {cat.name} that has at least 2 {noun(t.name)} rows, show the {cat.name} labelled "
-        f"\"{cat.name.title()}\" and the average {n.name} rounded to 2 decimals labelled \"Average\". "
+        question=f"For each {cat.name} that has at least 2 {plural(t.name)}, show the {cat.name} labelled "
+        f"\"{label(cat.name)}\" and the average {n.name} rounded to 2 decimals labelled \"Average\". "
         f"Sort by Average, highest first (ties: {cat.name} A to Z).",
-        answer=f'SELECT {cat.name} AS "{cat.name.title()}", ROUND(AVG({n.name}), 2) AS "Average"\nFROM {t.name}\n'
+        answer=f'SELECT {cat.name} AS "{label(cat.name)}", ROUND(AVG({n.name}), 2) AS "Average"\nFROM {t.name}\n'
         f"GROUP BY {cat.name}\nHAVING COUNT(*) >= 2\nORDER BY 2 DESC, 1;",
-        columns=[cat.name.title(), "Average"],
+        columns=[label(cat.name), "Average"],
         ordered=True,
         order_note="Average highest first",
         hints=[
             "WHERE filters rows before grouping; HAVING filters whole groups after grouping.",
             f"... GROUP BY {cat.name} HAVING COUNT(*) >= ____ ORDER BY ____ DESC, ____;",
-            f"SELECT {cat.name} AS \"{cat.name.title()}\", ROUND(AVG({n.name}), 2) AS \"Average\" FROM {t.name} GROUP BY {cat.name} HAVING ... ORDER BY 2 DESC, 1;",
+            f"SELECT {cat.name} AS \"{label(cat.name)}\", ROUND(AVG({n.name}), 2) AS \"Average\" FROM {t.name} GROUP BY {cat.name} HAVING ... ORDER BY 2 DESC, 1;",
         ],
         explain="GROUP BY makes one group per category; HAVING drops groups that are too small. "
         "You can't use COUNT(*) in WHERE because WHERE runs before the groups exist.",
@@ -781,7 +804,7 @@ def t_group_join(ctx: Ctx) -> Spec | None:
         if not counts:
             continue
         return dict(
-            question=f"Which {noun(pt)} rows appear in {ct} at least twice? Show the {noun(pt)}'s {p.label.name} "
+            question=f"Which {plural(pt)} appear in the {ct} table at least twice? Show the {noun(pt)}'s {p.label.name} "
             f"labelled \"{noun(pt).title()}\" and how many times labelled \"Times\". Sort by Times highest first, "
             f"then {noun(pt).title()} A to Z.",
             answer=f'SELECT p.{p.label.name} AS "{noun(pt).title()}", COUNT(*) AS "Times"\nFROM {pt} p\n'
