@@ -125,8 +125,10 @@ Players start at level 3 in every topic.
    (tables, numeric/text columns, join paths, self-references) and emit a
    question + reference query + hints. Every generated level is validated
    by running its answer (must succeed, return 1..50 rows) before use.
-3. **AI levels** (key only): model writes question + answer + hints; same
-   validation; rejected if it fails.
+3. **AI levels** (key only): written in the background (never blocks play) by
+   `OPENAI_GEN_MODEL` with built-in exam-style levels as few-shot examples; same
+   validation, plus a syllabus guard (no subqueries in FROM, CTEs, window
+   functions, CASE) and a length limit; rejected if anything fails.
 
 ### Picking the next level
 
@@ -201,7 +203,9 @@ key is configured.
 
 ## Optional AI
 
-`.env`: `OPENAI_API_KEY`, `OPENAI_MODEL`. All provider calls are in
+`.env`: `OPENAI_API_KEY`, `OPENAI_GEN_MODEL` (default `gpt-6.1-sol`, high
+reasoning for worlds, medium for levels), `OPENAI_FEEDBACK_MODEL` (default
+`gpt-6.1-sol`, low reasoning). All provider calls are in
 `engine/ai.py` (one function per task: `generate_world`, `generate_level`,
 `tutor_feedback`);
 swapping provider only touches that file. The key is never logged, printed,
