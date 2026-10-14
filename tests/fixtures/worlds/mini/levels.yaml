@@ -1,0 +1,18 @@
+- id: fl
+  topic: shape
+  difficulty: 2
+  question: Florida customers, newest id first.
+  columns: ["Customer Number", "Customer Name"]
+  ordered: true
+  order_note: Customer Number, largest first
+  answer: |
+    SELECT customerid AS "Customer Number", CONCAT(firstname, ' ', lastname) AS "Customer Name"
+    FROM customer WHERE state = 'FL' ORDER BY customerid DESC;
+  hints: ["Filter on state", "SELECT ... FROM customer WHERE ... ORDER BY ... DESC", "almost"]
+- id: never
+  topic: selfleft
+  difficulty: 3
+  question: Products never ordered.
+  answer: |
+    SELECT p.name FROM product p LEFT JOIN orders o ON p.productid = o.productid WHERE o.orderid IS NULL;
+  hints: ["LEFT JOIN", "IS NULL", "near"]

@@ -1,6 +1,6 @@
 # sqlplay design
 
-Local SQL practice playground for PostgreSQL. Endless HOA-style challenges,
+Local SQL practice playground for PostgreSQL. Command: `psqlay`. Endless HOA-style challenges,
 graded by comparing results, playable in a browser or a terminal.
 
 Status: approved 2026-10-15 (sections 1-3 reviewed in chat).
@@ -43,11 +43,10 @@ sqlplay creates and runs its **own** Postgres cluster using the locally
 installed Postgres binaries (found via `SQLPLAY_PG_BIN`, `pg_config`, PATH,
 `/Library/PostgreSQL/*/bin`, Postgres.app, Homebrew).
 
-- Data dir: `<project>/.pgdata/` (gitignored).
+- Data dir: `~/.sqlplay/pgdata/` (override with `SQLPLAY_HOME`).
 - Listens on a unix socket only (`listen_addresses = ''`), so nothing on the
   network can connect. No password needed.
-- Started on demand by `sqlplay`, stopped with `sqlplay stop`.
-- Advanced: `SQLPLAY_DSN` in `.env` points at an existing server instead.
+- Started on demand by `psqlay`, stopped with `psqlay stop`.
 
 The user's main Postgres server and `booksdb` are never touched.
 
@@ -155,6 +154,16 @@ Both queries run through the sandbox. Checks, in order; first failure wins:
 
 Result: PASS / FAIL + one specific feedback message.
 
+### AI tutor feedback (key only)
+
+On FAIL, the rule-based message shows immediately; the AI tutor is then given
+the question, the player's query, the error or a sample of their rows, the
+expected row count/columns, and the reference query, and asked for a short
+nudge that names what to reconsider **without revealing the answer**. On PASS,
+an occasional one-line style tip (alternate join style, simpler form). In exam
+mode, AI comments appear only in the end-of-exam breakdown. Any AI failure
+falls back silently to the rule-based message.
+
 ## Modes
 
 - **Practice**: one level at a time, 3 hints (each costs points), skip,
@@ -176,13 +185,13 @@ Player SQL and every reference query:
 
 ## Front ends
 
-### Terminal (`sqlplay`)
+### Terminal (`psqlay`)
 
 psql-like REPL: multi-line input until `;`, results as psql-style tables,
 commands `\hint \skip \answer \dt \d <table> \topic <t> \mix \exam \world
 \score \help \q`. Colour output. Readline history.
 
-### Web (`sqlplay web`)
+### Web (`psqlay web`)
 
 FastAPI on 127.0.0.1:8000, single static page (no framework): world/topic
 pickers, question card, SQL editor textarea (Ctrl+Enter to run), results
@@ -193,7 +202,8 @@ key is configured.
 ## Optional AI
 
 `.env`: `OPENAI_API_KEY`, `OPENAI_MODEL`. All provider calls are in
-`engine/ai.py` (one function per task: `generate_world`, `generate_level`);
+`engine/ai.py` (one function per task: `generate_world`, `generate_level`,
+`tutor_feedback`);
 swapping provider only touches that file. The key is never logged, printed,
 or sent to the browser. AI output is treated as untrusted and always goes
 through the validator / sandbox.
