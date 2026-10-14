@@ -1,0 +1,642 @@
+# Silver Screen Rentals: practice levels modelled on the bookstore HOA.
+
+# ------------------------------------------------------------------ select
+- id: m01
+  topic: select
+  difficulty: 2
+  question: >
+    Which rentals have not been returned yet? Show the rental ID, the member ID,
+    the rental date and the branch, labelled "Rental ID", "Member ID", "Rental Date"
+    and "Branch". Any order.
+  columns: ["Rental ID", "Member ID", "Rental Date", "Branch"]
+  answer: |
+    SELECT rentalid AS "Rental ID", memberid AS "Member ID",
+           rentaldate AS "Rental Date", branch AS "Branch"
+    FROM rental
+    WHERE returndate IS NULL;
+  hints:
+    - "A rental that has not come back has no return date. Missing values are NULL, and NULL needs a special test."
+    - "SELECT rentalid AS \"Rental ID\", memberid AS \"Member ID\", rentaldate AS \"Rental Date\", branch AS \"Branch\" FROM rental WHERE returndate ____;"
+    - "Use WHERE returndate IS NULL (not = NULL, which is never true)."
+  explain: >
+    An unreturned rental has NULL in returndate. NULL means "unknown", so returndate = NULL is
+    never true; you must write IS NULL. Labels with capitals or spaces go in double quotes.
+
+- id: m02
+  topic: select
+  difficulty: 3
+  question: >
+    List the 'Drama' and 'Thriller' movies released on or after 1 January 2015 that have a
+    rating of at least 7.5. Show the title, genre and rating, labelled "Title", "Genre" and
+    "Rating". Any order.
+  columns: ["Title", "Genre", "Rating"]
+  answer: |
+    SELECT title AS "Title", genre AS "Genre", rating AS "Rating"
+    FROM movie
+    WHERE (genre = 'Drama' OR genre = 'Thriller')
+      AND releasedate >= '2015-01-01'
+      AND rating >= 7.5;
+  hints:
+    - "Three conditions: the genre (one of two values), the release date, and the rating. Watch how AND and OR combine."
+    - "WHERE (genre = 'Drama' OR genre = ____) AND releasedate >= ____ AND rating ____ 7.5"
+    - "WHERE (genre = 'Drama' OR genre = 'Thriller') AND releasedate >= '2015-01-01' AND rating ____ 7.5   -- 'at least' includes 7.5"
+  explain: >
+    AND is applied before OR, so without parentheses every Drama sneaks in, even old ones like QUIET HARBOR.
+    The parentheses make the genre test one unit. Genres are mixed case, so 'Drama' must match exactly,
+    and "at least 7.5" means >= so THE LAST HEIST (exactly 7.5) is included. IN ('Drama', 'Thriller') works too.
+
+# ------------------------------------------------------------------ shape
+- id: m03
+  topic: shape
+  difficulty: 3
+  question: >
+    List every member's full name (first name, a space, last name) labelled "Member", and their
+    city labelled "City". Sort by city alphabetically, then by the full name alphabetically.
+  columns: ["Member", "City"]
+  ordered: true
+  order_note: "City A-Z, then Member A-Z"
+  answer: |
+    SELECT firstname || ' ' || lastname AS "Member", city AS "City"
+    FROM member
+    ORDER BY "City", "Member";
+  hints:
+    - "Glue the first name, a space and the last name into one column with || (or CONCAT), then sort by two columns."
+    - "SELECT firstname || ____ || lastname AS \"Member\", city AS \"City\" FROM member ORDER BY ____, ____;"
+    - "SELECT firstname || ' ' || lastname AS \"Member\", city AS \"City\" FROM member ORDER BY \"City\", ____;"
+  explain: >
+    || joins strings, so firstname || ' ' || lastname gives "ALICE MORGAN". ORDER BY with two keys sorts by
+    the first one and uses the second only to break ties inside the same city. You can ORDER BY the labels
+    you just created.
+
+- id: m04
+  topic: shape
+  difficulty: 3
+  question: >
+    For every 'Comedy' movie show its title, price, cost and profit per day (price minus cost),
+    labelled "Title", "Price", "Cost" and "Profit". Sort by profit, highest first; when two
+    movies have the same profit, sort them by title alphabetically.
+  columns: ["Title", "Price", "Cost", "Profit"]
+  ordered: true
+  order_note: "Profit highest first, then Title A-Z"
+  answer: |
+    SELECT title AS "Title", price AS "Price", cost AS "Cost", price - cost AS "Profit"
+    FROM movie
+    WHERE genre = 'Comedy'
+    ORDER BY "Profit" DESC, "Title";
+  hints:
+    - "You can do arithmetic in the SELECT list and give the result a label. DESC sorts highest first."
+    - "SELECT title AS \"Title\", price AS \"Price\", cost AS \"Cost\", ____ AS \"Profit\" FROM movie WHERE genre = 'Comedy' ORDER BY ____;"
+    - "... ORDER BY \"Profit\" DESC, ____;"
+  explain: >
+    price - cost is a computed column; AS "Profit" names it. ORDER BY "Profit" DESC puts the biggest profit
+    first, and the second key ("Title") decides the order for LAUGH TRACK 2 and FAMILY REUNION, which tie at 2.29.
+
+- id: m05
+  topic: shape
+  difficulty: 3
+  question: >
+    Which genres have movies released on or after 1 January 2020? Show each genre once,
+    labelled "Genre", sorted alphabetically.
+  columns: ["Genre"]
+  ordered: true
+  order_note: "Genre A-Z"
+  answer: |
+    SELECT DISTINCT genre AS "Genre"
+    FROM movie
+    WHERE releasedate >= '2020-01-01'
+    ORDER BY "Genre";
+  hints:
+    - "Several movies share a genre. One keyword right after SELECT removes duplicate rows."
+    - "SELECT ____ genre AS \"Genre\" FROM movie WHERE releasedate >= ____ ORDER BY \"Genre\";"
+    - "SELECT DISTINCT genre AS \"Genre\" FROM movie WHERE releasedate >= ____ ORDER BY \"Genre\";"
+  explain: >
+    Ten movies were released in 2020 or later but they only cover six genres. DISTINCT keeps one copy of each
+    identical row. Dates are compared with a quoted literal like '2020-01-01'.
+
+# ------------------------------------------------------------------ aggregates
+- id: m06
+  topic: aggregates
+  difficulty: 2
+  question: >
+    What is the total production budget (in millions) of all 'Sci-Fi' movies? Label it "Total Budget".
+  columns: ["Total Budget"]
+  answer: |
+    SELECT SUM(budget) AS "Total Budget"
+    FROM movie
+    WHERE genre = 'Sci-Fi';
+  hints:
+    - "Adding up a column over many rows is an aggregate function. Filter the rows first with WHERE."
+    - "SELECT ____(budget) AS \"Total Budget\" FROM movie WHERE genre = ____;"
+    - "SELECT SUM(budget) AS \"Total Budget\" FROM movie WHERE genre = ____;   -- mixed case!"
+  explain: >
+    WHERE keeps only the Sci-Fi rows, then SUM adds their budgets into one number. The genre is stored as
+    'Sci-Fi' (mixed case with a hyphen), so 'SCI-FI' would match nothing.
+
+- id: m07
+  topic: aggregates
+  difficulty: 3
+  question: >
+    For 'Drama' movies, show the average price rounded to 2 decimals, the highest price and the lowest
+    price, labelled "Average Price", "Highest Price" and "Lowest Price".
+  columns: ["Average Price", "Highest Price", "Lowest Price"]
+  answer: |
+    SELECT ROUND(AVG(price), 2) AS "Average Price",
+           MAX(price) AS "Highest Price",
+           MIN(price) AS "Lowest Price"
+    FROM movie
+    WHERE genre = 'Drama';
+  hints:
+    - "Three aggregate functions can sit side by side in one SELECT. ROUND(x, 2) trims the average."
+    - "SELECT ROUND(____(price), 2) AS \"Average Price\", ____(price) AS \"Highest Price\", ____(price) AS \"Lowest Price\" FROM movie WHERE ____;"
+    - "SELECT ROUND(AVG(price), 2) AS \"Average Price\", MAX(price) AS \"Highest Price\", MIN(price) AS \"Lowest Price\" FROM movie WHERE genre = ____;"
+  explain: >
+    AVG, MAX and MIN each collapse the filtered Drama rows into one value, so the result is one row with
+    three columns. ROUND(AVG(price), 2) rounds the average to cents.
+
+- id: m08
+  topic: aggregates
+  difficulty: 4
+  question: >
+    How many different members have rented at least one 'Sci-Fi' movie? Each member counts once, no
+    matter how many Sci-Fi movies they rented. Label the number "Members".
+  columns: ["Members"]
+  answer: |
+    SELECT COUNT(DISTINCT r.memberid) AS "Members"
+    FROM rental r
+    JOIN rentalitem ri ON ri.rentalid = r.rentalid
+    JOIN movie m ON m.movieid = ri.movieid
+    WHERE m.genre = 'Sci-Fi';
+  hints:
+    - "The genre is in movie, the member is in rental, and rentalitem connects them. Count members without repeats."
+    - "SELECT COUNT(____ r.memberid) AS \"Members\" FROM rental r JOIN rentalitem ri ON ____ JOIN movie m ON ____ WHERE m.genre = 'Sci-Fi';"
+    - "SELECT COUNT(DISTINCT r.memberid) AS \"Members\" FROM rental r JOIN rentalitem ri ON ri.rentalid = r.rentalid JOIN movie m ON ____ WHERE m.genre = 'Sci-Fi';"
+  explain: >
+    The joins produce one row per Sci-Fi rental line (12 of them), and ALICE MORGAN alone has four.
+    COUNT(DISTINCT r.memberid) counts each member once, giving 7. Plain COUNT(*) would count rental lines instead.
+
+# ------------------------------------------------------------------ subqueries
+- id: m09
+  topic: subqueries
+  difficulty: 3
+  question: >
+    Find the longest 'Sci-Fi' movie (largest runtime). Show its title, runtime and the name of its studio,
+    labelled "Title", "Runtime" and "Studio".
+  columns: ["Title", "Runtime", "Studio"]
+  answer: |
+    SELECT m.title AS "Title", m.runtime AS "Runtime", s.name AS "Studio"
+    FROM movie m
+    JOIN studio s ON s.studioid = m.studioid
+    WHERE m.genre = 'Sci-Fi'
+      AND m.runtime = (SELECT MAX(runtime) FROM movie WHERE genre = 'Sci-Fi');
+  hints:
+    - "Find the biggest Sci-Fi runtime with a subquery using MAX, then keep the Sci-Fi movie with that runtime. Join studio for the name."
+    - "... WHERE m.genre = 'Sci-Fi' AND m.runtime = (SELECT ____(runtime) FROM movie WHERE ____);"
+    - "SELECT m.title AS \"Title\", m.runtime AS \"Runtime\", s.name AS \"Studio\" FROM movie m JOIN studio s ON s.studioid = m.studioid WHERE ____ AND m.runtime = (SELECT MAX(runtime) FROM movie WHERE genre = 'Sci-Fi');"
+  explain: >
+    The subquery finds 152, the longest Sci-Fi runtime. But a Drama (THE LONG WINTER) is also 152 minutes,
+    so the outer query must filter genre = 'Sci-Fi' too, or it returns two movies. The join to studio
+    supplies the studio name.
+
+- id: m10
+  topic: subqueries
+  difficulty: 3
+  question: >
+    List the movies whose price is above the average price of all movies. Show the title, price and studio
+    name, labelled "Title", "Price" and "Studio". Sort by price, highest first; for equal prices sort by
+    title alphabetically.
+  columns: ["Title", "Price", "Studio"]
+  ordered: true
+  order_note: "Price highest first, then Title A-Z"
+  answer: |
+    SELECT m.title AS "Title", m.price AS "Price", s.name AS "Studio"
+    FROM movie m
+    JOIN studio s ON s.studioid = m.studioid
+    WHERE m.price > (SELECT AVG(price) FROM movie)
+    ORDER BY "Price" DESC, "Title";
+  hints:
+    - "You can't write WHERE price > AVG(price). Compute the average in a subquery instead."
+    - "... WHERE m.price > (SELECT ____ FROM movie) ORDER BY ____;"
+    - "SELECT m.title AS \"Title\", m.price AS \"Price\", s.name AS \"Studio\" FROM movie m JOIN studio s ON s.studioid = m.studioid WHERE m.price > (SELECT AVG(price) FROM movie) ORDER BY ____;"
+  explain: >
+    Aggregates are not allowed directly in WHERE, so (SELECT AVG(price) FROM movie) computes one number
+    first and each movie is compared to it. The join adds the studio name and ORDER BY "Price" DESC, "Title"
+    gives the requested order with ties broken by title.
+
+- id: m11
+  topic: subqueries
+  difficulty: 4
+  question: >
+    Find the movies made by the same studio as 'QUIET HARBOR' whose profit per day (price minus cost) is
+    greater than the average profit per day of all movies in the catalog. Show the title and the profit,
+    labelled "Title" and "Profit". Sort by profit, highest first, then by title alphabetically.
+    (QUIET HARBOR itself does not qualify.)
+  columns: ["Title", "Profit"]
+  ordered: true
+  order_note: "Profit highest first, then Title A-Z"
+  answer: |
+    SELECT title AS "Title", price - cost AS "Profit"
+    FROM movie
+    WHERE studioid = (SELECT studioid FROM movie WHERE title = 'QUIET HARBOR')
+      AND price - cost > (SELECT AVG(price - cost) FROM movie)
+    ORDER BY "Profit" DESC, "Title";
+  hints:
+    - "Two subqueries: one looks up QUIET HARBOR's studio ID, the other computes the average of a computed value (price - cost)."
+    - "WHERE studioid = (SELECT ____ FROM movie WHERE title = 'QUIET HARBOR') AND price - cost > (SELECT AVG(____) FROM movie)"
+    - "SELECT title AS \"Title\", price - cost AS \"Profit\" FROM movie WHERE studioid = (SELECT studioid FROM movie WHERE title = 'QUIET HARBOR') AND price - cost > (SELECT AVG(price - cost) FROM movie) ORDER BY ____;"
+  explain: >
+    The first subquery turns the title into a studio ID, so you don't have to look it up by hand. AVG can
+    average an expression, so AVG(price - cost) is the catalog-wide average profit. Both conditions must hold,
+    hence AND. QUIET HARBOR's own profit is below average, so it drops out naturally.
+
+- id: m12
+  topic: subqueries
+  difficulty: 4
+  question: >
+    KENJI TANAKA has rented from some of the branches. List every rental made in 2024 at any branch where
+    KENJI TANAKA has ever made a rental (his own rentals included). Show the rental ID, the full name of the
+    member who made the rental (first name, space, last name) and the branch, labelled "Rental ID", "Member"
+    and "Branch". Each rental once, sorted by rental ID.
+  columns: ["Rental ID", "Member", "Branch"]
+  ordered: true
+  order_note: "Rental ID ascending"
+  answer: |
+    SELECT r.rentalid AS "Rental ID", mb.firstname || ' ' || mb.lastname AS "Member", r.branch AS "Branch"
+    FROM rental r
+    JOIN member mb ON mb.memberid = r.memberid
+    WHERE r.rentaldate >= '2024-01-01' AND r.rentaldate <= '2024-12-31'
+      AND r.branch IN (SELECT r2.branch
+                       FROM rental r2
+                       JOIN member m2 ON m2.memberid = r2.memberid
+                       WHERE m2.firstname = 'KENJI' AND m2.lastname = 'TANAKA')
+    ORDER BY "Rental ID";
+  hints:
+    - "First find Kenji's branches with a subquery that joins member and rental. He used more than one branch, so compare with IN, not =."
+    - "WHERE r.rentaldate >= '2024-01-01' AND r.rentaldate <= '2024-12-31' AND r.branch IN (SELECT r2.branch FROM rental r2 JOIN member m2 ON ____ WHERE ____)"
+    - "SELECT r.rentalid AS \"Rental ID\", mb.firstname || ' ' || mb.lastname AS \"Member\", r.branch AS \"Branch\" FROM rental r JOIN member mb ON mb.memberid = r.memberid WHERE <2024 dates> AND r.branch IN (SELECT r2.branch FROM rental r2 JOIN member m2 ON m2.memberid = r2.memberid WHERE m2.firstname = 'KENJI' AND m2.lastname = 'TANAKA') ORDER BY ____;"
+  explain: >
+    The subquery returns Kenji's branches (HARBOR and UPTOWN). Because it returns two rows, = would fail with
+    "more than one row returned"; IN accepts a list. The outer query joins member to show who made each 2024
+    rental at those branches.
+
+- id: m13
+  topic: subqueries
+  difficulty: 5
+  question: >
+    Which movies have never been rented by any member who lives in 'RIVERTON'? (Movies never rented at all
+    count too.) Show the title labelled "Title", sorted alphabetically.
+  columns: ["Title"]
+  ordered: true
+  order_note: "Title A-Z"
+  answer: |
+    SELECT title AS "Title"
+    FROM movie
+    WHERE movieid NOT IN (SELECT ri.movieid
+                          FROM rentalitem ri
+                          JOIN rental r ON r.rentalid = ri.rentalid
+                          JOIN member mb ON mb.memberid = r.memberid
+                          WHERE mb.city = 'RIVERTON')
+    ORDER BY "Title";
+  hints:
+    - "First build the list of movies that Riverton members DID rent (a subquery with joins). Then keep the movies that are NOT IN that list."
+    - "SELECT title AS \"Title\" FROM movie WHERE movieid NOT IN (SELECT ri.movieid FROM rentalitem ri JOIN rental r ON ____ JOIN member mb ON ____ WHERE ____) ORDER BY \"Title\";"
+    - "... NOT IN (SELECT ri.movieid FROM rentalitem ri JOIN rental r ON r.rentalid = ri.rentalid JOIN member mb ON mb.memberid = r.memberid WHERE mb.city = ____) ..."
+  explain: >
+    "Never rented by Riverton members" is the opposite of "rented by Riverton members". The subquery lists every
+    movie ID a Riverton member rented; NOT IN keeps the rest, including movies nobody ever rented. Writing
+    WHERE mb.city <> 'RIVERTON' in a join instead would be wrong: it finds movies rented by someone outside
+    Riverton, which is a different question.
+
+# ------------------------------------------------------------------ joins
+- id: m14
+  topic: joins
+  difficulty: 3
+  question: >
+    Which movies has ALICE MORGAN rented? Show each title once, labelled "Title", sorted alphabetically.
+  columns: ["Title"]
+  ordered: true
+  order_note: "Title A-Z"
+  answer: |
+    SELECT DISTINCT m.title AS "Title"
+    FROM member mb
+    JOIN rental r ON r.memberid = mb.memberid
+    JOIN rentalitem ri ON ri.rentalid = r.rentalid
+    JOIN movie m ON m.movieid = ri.movieid
+    WHERE mb.firstname = 'ALICE' AND mb.lastname = 'MORGAN'
+    ORDER BY "Title";
+  hints:
+    - "Walk the chain member -> rental -> rentalitem -> movie. She rented one movie twice, so remove duplicates."
+    - "SELECT DISTINCT m.title AS \"Title\" FROM member mb JOIN rental r ON ____ JOIN rentalitem ri ON ____ JOIN movie m ON ____ WHERE ____ ORDER BY \"Title\";"
+    - "... WHERE mb.firstname = 'ALICE' AND mb.lastname = 'MORGAN' ...   -- BEN MORGAN is a different member"
+  explain: >
+    Each JOIN follows one key: memberid, then rentalid, then movieid. Filtering on both first and last name
+    matters because BEN MORGAN shares the surname. DISTINCT removes STARFALL's second copy (she rented it twice).
+
+- id: m15
+  topic: joins
+  difficulty: 3
+  question: >
+    Which studios made the movies that actor JUNE MERCER appeared in? Show each studio name once,
+    labelled "Studio", sorted alphabetically.
+  columns: ["Studio"]
+  ordered: true
+  order_note: "Studio A-Z"
+  answer: |
+    SELECT DISTINCT s.name AS "Studio"
+    FROM actor a
+    JOIN movieactor ma ON ma.actorid = a.actorid
+    JOIN movie m ON m.movieid = ma.movieid
+    JOIN studio s ON s.studioid = m.studioid
+    WHERE a.fname = 'JUNE' AND a.lname = 'MERCER'
+    ORDER BY "Studio";
+  hints:
+    - "Actors and movies are linked through movieactor. Chain actor -> movieactor -> movie -> studio."
+    - "SELECT DISTINCT s.name AS \"Studio\" FROM actor a JOIN movieactor ma ON ____ JOIN movie m ON ____ JOIN studio s ON ____ WHERE ____ ORDER BY \"Studio\";"
+    - "... JOIN studio s ON s.studioid = m.studioid WHERE a.fname = 'JUNE' AND a.lname = 'MERCER' ..."
+  explain: >
+    movieactor is a link table: one row per (movie, actor) pair. Going through it reaches her four movies,
+    and each movie's studioid reaches the studio. Three of her movies share a studio, so DISTINCT is needed.
+
+- id: m16
+  topic: joins
+  difficulty: 4
+  question: >
+    Which members have rented the cheapest movie (the movie with the lowest price)? Show each member's full
+    name once (first name, space, last name) labelled "Member", sorted alphabetically.
+  columns: ["Member"]
+  ordered: true
+  order_note: "Member A-Z"
+  answer: |
+    SELECT DISTINCT mb.firstname || ' ' || mb.lastname AS "Member"
+    FROM member mb
+    JOIN rental r ON r.memberid = mb.memberid
+    JOIN rentalitem ri ON ri.rentalid = r.rentalid
+    JOIN movie m ON m.movieid = ri.movieid
+    WHERE m.price = (SELECT MIN(price) FROM movie)
+    ORDER BY "Member";
+  hints:
+    - "Chain member -> rental -> rentalitem -> movie, and use a MIN subquery to find the lowest price."
+    - "... WHERE m.price = (SELECT ____(price) FROM movie) ..."
+    - "SELECT DISTINCT mb.firstname || ' ' || mb.lastname AS \"Member\" FROM member mb JOIN rental r ON r.memberid = mb.memberid JOIN rentalitem ri ON ri.rentalid = r.rentalid JOIN movie m ON m.movieid = ri.movieid WHERE m.price = (SELECT MIN(price) FROM movie) ORDER BY ____;"
+  explain: >
+    The subquery finds the lowest price (2.79, NIGHT SHIFT). The four-table join connects each member to the
+    movies they rented, and WHERE keeps rentals of that movie. CHIDI OKAFOR rented it twice, so DISTINCT keeps
+    him once.
+
+- id: m17
+  topic: joins
+  difficulty: 4
+  question: >
+    Which members have rented at least one movie made by 'PAPER MOON PRODUCTIONS'? Show each member once:
+    full name (first name, space, last name) labelled "Member" and their city labelled "City". Sort by
+    member name alphabetically.
+  columns: ["Member", "City"]
+  ordered: true
+  order_note: "Member A-Z"
+  answer: |
+    SELECT DISTINCT mb.firstname || ' ' || mb.lastname AS "Member", mb.city AS "City"
+    FROM member mb
+    JOIN rental r ON r.memberid = mb.memberid
+    JOIN rentalitem ri ON ri.rentalid = r.rentalid
+    JOIN movie m ON m.movieid = ri.movieid
+    JOIN studio s ON s.studioid = m.studioid
+    WHERE s.name = 'PAPER MOON PRODUCTIONS'
+    ORDER BY "Member";
+  hints:
+    - "This is the whole five-table chain: member -> rental -> rentalitem -> movie -> studio."
+    - "SELECT DISTINCT ____ AS \"Member\", mb.city AS \"City\" FROM member mb JOIN rental r ON ____ JOIN rentalitem ri ON ____ JOIN movie m ON ____ JOIN studio s ON ____ WHERE s.name = 'PAPER MOON PRODUCTIONS' ORDER BY \"Member\";"
+    - "... JOIN movie m ON m.movieid = ri.movieid JOIN studio s ON s.studioid = m.studioid WHERE s.name = 'PAPER MOON PRODUCTIONS' ..."
+  explain: >
+    Five tables, four joins, each on the shared key. The studio name filter is applied at the far end of the
+    chain and the member's name comes from the other end. MARIA SANTOS rented two Paper Moon movies, so DISTINCT
+    is needed to list her once.
+
+- id: m18
+  topic: joins
+  difficulty: 5
+  question: >
+    Which actors appear in the movies that GIULIA ROSSI has rented? Show each actor's full name once
+    (first name, space, last name) labelled "Actor", sorted alphabetically.
+  columns: ["Actor"]
+  ordered: true
+  order_note: "Actor A-Z"
+  answer: |
+    SELECT DISTINCT a.fname || ' ' || a.lname AS "Actor"
+    FROM member mb
+    JOIN rental r ON r.memberid = mb.memberid
+    JOIN rentalitem ri ON ri.rentalid = r.rentalid
+    JOIN movie m ON m.movieid = ri.movieid
+    JOIN movieactor ma ON ma.movieid = m.movieid
+    JOIN actor a ON a.actorid = ma.actorid
+    WHERE mb.firstname = 'GIULIA' AND mb.lastname = 'ROSSI'
+    ORDER BY "Actor";
+  hints:
+    - "Go all the way from member to actor: member -> rental -> rentalitem -> movie -> movieactor -> actor."
+    - "SELECT DISTINCT a.fname || ' ' || a.lname AS \"Actor\" FROM member mb JOIN rental r ON ____ JOIN rentalitem ri ON ____ JOIN movie m ON ____ JOIN movieactor ma ON ____ JOIN actor a ON ____ WHERE ____ ORDER BY \"Actor\";"
+    - "... JOIN movieactor ma ON ma.movieid = m.movieid JOIN actor a ON a.actorid = ma.actorid WHERE mb.firstname = 'GIULIA' AND mb.lastname = 'ROSSI' ..."
+  explain: >
+    Six tables joined in a line. Giulia rented FAMILY REUNION twice and AMARA OYELARAN is in two of her
+    movies, so without DISTINCT names repeat. (You could skip the movie table and join movieactor straight to
+    rentalitem on movieid.)
+
+# ------------------------------------------------------------------ self-join & left join
+- id: m19
+  topic: selfleft
+  difficulty: 3
+  question: >
+    Which members have invited at least one other member? Show each inviter's full name once
+    (first name, space, last name) labelled "Inviter", sorted alphabetically.
+  columns: ["Inviter"]
+  ordered: true
+  order_note: "Inviter A-Z"
+  answer: |
+    SELECT DISTINCT i.firstname || ' ' || i.lastname AS "Inviter"
+    FROM member m
+    JOIN member i ON i.memberid = m.invitedby
+    ORDER BY "Inviter";
+  hints:
+    - "member.invitedby points back to member. Use the member table twice with two different aliases."
+    - "SELECT DISTINCT i.firstname || ' ' || i.lastname AS \"Inviter\" FROM member m JOIN member i ON ____ ORDER BY \"Inviter\";"
+    - "... JOIN member i ON i.memberid = m.____ ..."
+  explain: >
+    A self-join treats one table as two: m is the invited member, i is the person who invited them, matched
+    by i.memberid = m.invitedby. ALICE MORGAN invited four people, so DISTINCT keeps each inviter once.
+
+- id: m20
+  topic: selfleft
+  difficulty: 3
+  question: >
+    Which movies have never been rented? Show the title labelled "Title", sorted alphabetically.
+  columns: ["Title"]
+  ordered: true
+  order_note: "Title A-Z"
+  answer: |
+    SELECT m.title AS "Title"
+    FROM movie m
+    LEFT JOIN rentalitem ri ON ri.movieid = m.movieid
+    WHERE ri.movieid IS NULL
+    ORDER BY "Title";
+  hints:
+    - "A LEFT JOIN keeps every movie; the ones with no rental line get NULLs on the rentalitem side."
+    - "SELECT m.title AS \"Title\" FROM movie m LEFT JOIN rentalitem ri ON ____ WHERE ____ IS NULL ORDER BY \"Title\";"
+    - "SELECT m.title AS \"Title\" FROM movie m LEFT JOIN rentalitem ri ON ri.movieid = m.movieid WHERE ____ ORDER BY \"Title\";"
+  explain: >
+    An inner join drops movies with no match; a LEFT JOIN keeps them and fills the rentalitem columns with NULL.
+    WHERE ri.movieid IS NULL keeps exactly those unmatched movies. NOT IN (SELECT movieid FROM rentalitem) gives
+    the same answer.
+
+- id: m21
+  topic: selfleft
+  difficulty: 4
+  question: >
+    Some movies are sequels of another movie (movie.sequelof). List each sequel that has a higher rating than
+    the movie it follows. Show the sequel's title and rating and the original's title and rating, labelled
+    "Sequel", "Sequel Rating", "Original" and "Original Rating". Sort by the sequel's title alphabetically.
+  columns: ["Sequel", "Sequel Rating", "Original", "Original Rating"]
+  ordered: true
+  order_note: "Sequel A-Z"
+  answer: |
+    SELECT s.title AS "Sequel", s.rating AS "Sequel Rating",
+           o.title AS "Original", o.rating AS "Original Rating"
+    FROM movie s
+    JOIN movie o ON o.movieid = s.sequelof
+    WHERE s.rating > o.rating
+    ORDER BY "Sequel";
+  hints:
+    - "Join movie to itself: one copy for the sequel, one for the original, matched on sequelof."
+    - "SELECT s.title AS \"Sequel\", s.rating AS \"Sequel Rating\", o.title AS \"Original\", o.rating AS \"Original Rating\" FROM movie s JOIN movie o ON ____ WHERE ____ ORDER BY \"Sequel\";"
+    - "... JOIN movie o ON o.movieid = s.sequelof WHERE s.rating ____ o.rating ..."
+  explain: >
+    With two aliases you can compare a row with the row it points to. s.sequelof holds the original's movieid,
+    so o.movieid = s.sequelof pairs each sequel with its original, and WHERE s.rating > o.rating compares the
+    two copies. Movies that are not sequels have NULL in sequelof and never match.
+
+- id: m22
+  topic: selfleft
+  difficulty: 5
+  question: >
+    Which movies were not rented at all during 2024 (rental date between 1 January and 31 December 2024)?
+    Movies that were never rented count too. Show the title labelled "Title", sorted alphabetically.
+  columns: ["Title"]
+  ordered: true
+  order_note: "Title A-Z"
+  answer: |
+    SELECT m.title AS "Title"
+    FROM movie m
+    LEFT JOIN (SELECT ri.movieid
+               FROM rentalitem ri
+               JOIN rental r ON r.rentalid = ri.rentalid
+               WHERE r.rentaldate >= '2024-01-01' AND r.rentaldate <= '2024-12-31') t
+           ON t.movieid = m.movieid
+    WHERE t.movieid IS NULL
+    ORDER BY "Title";
+  hints:
+    - "First get the movies that WERE rented in 2024 (rentalitem joined to rental, filtered by date). Then find movies with no match in that set."
+    - "SELECT m.title AS \"Title\" FROM movie m LEFT JOIN (SELECT ri.movieid FROM rentalitem ri JOIN rental r ON ____ WHERE ____) t ON t.movieid = m.movieid WHERE ____ ORDER BY \"Title\";"
+    - "... WHERE r.rentaldate >= '2024-01-01' AND r.rentaldate <= '2024-12-31') t ON t.movieid = m.movieid WHERE t.movieid IS NULL ..."
+  explain: >
+    The date filter must be applied before the "no match" test. If you LEFT JOIN rentalitem and rental and then
+    put the 2024 filter in WHERE, the unmatched NULL rows are thrown away and you lose the never-rented movies.
+    Filtering inside a subquery (or in the ON clause), or using NOT IN (movies rented in 2024), keeps them.
+    "Rented before 2024" is also not the same thing: STARFALL was rented in 2023 and again in 2024.
+
+# ------------------------------------------------------------------ group by / having
+- id: m23
+  topic: groupby
+  difficulty: 3
+  question: >
+    How many movies are there in each genre? Show the genre labelled "Genre" and the number of movies labelled
+    "Movies". Sort by the number of movies, most first; for equal counts sort by genre alphabetically.
+  columns: ["Genre", "Movies"]
+  ordered: true
+  order_note: "Movies most first, then Genre A-Z"
+  answer: |
+    SELECT genre AS "Genre", COUNT(*) AS "Movies"
+    FROM movie
+    GROUP BY genre
+    ORDER BY "Movies" DESC, "Genre";
+  hints:
+    - "GROUP BY genre makes one group per genre; COUNT(*) then counts the rows inside each group."
+    - "SELECT genre AS \"Genre\", ____ AS \"Movies\" FROM movie GROUP BY ____ ORDER BY ____;"
+    - "SELECT genre AS \"Genre\", COUNT(*) AS \"Movies\" FROM movie GROUP BY genre ORDER BY \"Movies\" DESC, ____;"
+  explain: >
+    Without GROUP BY, COUNT(*) gives one number for the whole table. GROUP BY genre splits the rows into piles,
+    one per genre, and the aggregate runs once per pile, so you get one output row per genre. Every column in
+    SELECT must be either in GROUP BY or inside an aggregate.
+
+- id: m24
+  topic: groupby
+  difficulty: 4
+  question: >
+    For each studio that has made at least 5 movies, show the studio name, its number of movies and the
+    average rating of its movies rounded to 2 decimals, labelled "Studio", "Movies" and "Average Rating".
+    Sort by studio name alphabetically.
+  columns: ["Studio", "Movies", "Average Rating"]
+  ordered: true
+  order_note: "Studio A-Z"
+  answer: |
+    SELECT s.name AS "Studio", COUNT(*) AS "Movies", ROUND(AVG(m.rating), 2) AS "Average Rating"
+    FROM studio s
+    JOIN movie m ON m.studioid = s.studioid
+    GROUP BY s.name
+    HAVING COUNT(*) >= 5
+    ORDER BY "Studio";
+  hints:
+    - "Join studio to movie, GROUP BY the studio, then filter the groups. Filtering groups uses HAVING, not WHERE."
+    - "SELECT s.name AS \"Studio\", COUNT(*) AS \"Movies\", ROUND(AVG(m.rating), 2) AS \"Average Rating\" FROM studio s JOIN movie m ON ____ GROUP BY ____ HAVING ____ ORDER BY \"Studio\";"
+    - "... GROUP BY s.name HAVING COUNT(*) >= ____ ORDER BY \"Studio\";"
+  explain: >
+    WHERE filters single rows before grouping; HAVING filters whole groups after grouping, so conditions on
+    COUNT(*) belong in HAVING. Each studio group gets its own COUNT and AVG. BLUE HORIZON MEDIA and PAPER MOON
+    PRODUCTIONS have only 4 movies and drop out.
+
+- id: m25
+  topic: groupby
+  difficulty: 4
+  question: >
+    Which members have made more than 2 rentals? Show the member's full name (first name, space, last name)
+    labelled "Member" and their number of rentals labelled "Rentals". Sort by number of rentals, most first,
+    then by name alphabetically.
+  columns: ["Member", "Rentals"]
+  ordered: true
+  order_note: "Rentals most first, then Member A-Z"
+  answer: |
+    SELECT mb.firstname || ' ' || mb.lastname AS "Member", COUNT(*) AS "Rentals"
+    FROM member mb
+    JOIN rental r ON r.memberid = mb.memberid
+    GROUP BY mb.memberid, mb.firstname, mb.lastname
+    HAVING COUNT(*) > 2
+    ORDER BY "Rentals" DESC, "Member";
+  hints:
+    - "Count rentals (not rental items) per member: join member to rental only, group by member, keep groups with HAVING."
+    - "SELECT mb.firstname || ' ' || mb.lastname AS \"Member\", COUNT(*) AS \"Rentals\" FROM member mb JOIN rental r ON ____ GROUP BY ____ HAVING ____ ORDER BY ____;"
+    - "... GROUP BY mb.memberid, mb.firstname, mb.lastname HAVING COUNT(*) > 2 ORDER BY \"Rentals\" DESC, \"Member\";"
+  explain: >
+    Grouping by the member gives one pile of rental rows per member and COUNT(*) counts them. HAVING COUNT(*) > 2
+    keeps members with 3 or more. Don't join rentalitem here: that would count movies, not rentals, and inflate
+    the numbers. Grouping by memberid keeps two members with the same name apart.
+
+- id: m26
+  topic: groupby
+  difficulty: 5
+  question: >
+    For every studio, show how many times its movies have been rented (each rental line in rentalitem counts
+    once). Include studios whose movies were never rented, with 0. Show the studio name labelled "Studio"
+    and the count labelled "Times Rented". Sort by the count, highest first, then by studio name alphabetically.
+  columns: ["Studio", "Times Rented"]
+  ordered: true
+  order_note: "Times Rented highest first, then Studio A-Z"
+  answer: |
+    SELECT s.name AS "Studio", COUNT(ri.movieid) AS "Times Rented"
+    FROM studio s
+    LEFT JOIN movie m ON m.studioid = s.studioid
+    LEFT JOIN rentalitem ri ON ri.movieid = m.movieid
+    GROUP BY s.name
+    ORDER BY "Times Rented" DESC, "Studio";
+  hints:
+    - "To keep studios with nothing rented you need LEFT JOINs. Then GROUP BY studio and count only the rows that really have a rental line."
+    - "SELECT s.name AS \"Studio\", COUNT(____) AS \"Times Rented\" FROM studio s LEFT JOIN movie m ON ____ LEFT JOIN rentalitem ri ON ____ GROUP BY s.name ORDER BY ____;"
+    - "COUNT(*) counts the NULL-filled row too. Use COUNT(ri.movieid), which skips NULLs."
+  explain: >
+    LEFT JOIN keeps SILVERLAKE ANIMATION even though it has no movies; its one row has NULLs on the right side.
+    COUNT(*) would count that row as 1, but COUNT(ri.movieid) counts only non-NULL values, giving the correct 0.
+    Both joins must be LEFT: an inner join anywhere in the chain would drop the empty studio again.

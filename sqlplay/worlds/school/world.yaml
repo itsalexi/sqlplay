@@ -1,0 +1,15 @@
+name: Northfield Academy
+emoji: "🏫"
+blurb: A small high school where students enroll in course sections taught by teachers from six departments, with older students mentoring younger ones.
+join_map: |
+  student -studentid- enrollment -sectionid- section -courseid- course -deptid- department
+  course -courseid- courseteacher -teacherid- teacher
+  teacher.homedept -> department.deptid
+  student.mentorid -> student.studentid
+  teacher.headid -> teacher.teacherid
+notes: |
+  Names, course titles, cities, rooms and department names are stored in CAPITALS.
+  Course categories are mixed case ('Science', 'Math', 'Arts', 'Language', 'History', 'Computing').
+  A course's category is not the same thing as its department (ROBOTICS is a 'Science' course run by TECHNOLOGY).
+  Terms look like '2024-FALL', '2025-SPRING', '2025-FALL'. grade is NULL while a 2025-FALL section is still in progress.
+  margin of a course = fee - matcost.

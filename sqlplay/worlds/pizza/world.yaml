@@ -1,0 +1,12 @@
+name: Slice Society
+emoji: "🍕"
+blurb: A busy pizza chain with customers who refer their friends, orders delivered across the country, and pizzas built from suppliers and toppings.
+join_map: |
+  customer -customerid- orders -orderid- orderline -pizzaid- pizza -supplierid- supplier
+  pizza -pizzaid- pizzatopping -toppingid- topping
+  customer.referredby -> customer.customerid
+notes: |
+  Names, pizza names, supplier names and topping names are stored in CAPITALS (e.g. 'LEO', 'PARK', 'HAWAIIAN').
+  Categories and topping types are mixed case ('Classic', 'Vegetarian', 'Meaty', 'Specialty', 'Dessert').
+  price = what the customer pays; cost = what the pizza costs Slice Society to make. Profit = price - cost.
+  deliverydate is NULL for orders not delivered yet. Delivery city/state can differ from the customer's home city/state.

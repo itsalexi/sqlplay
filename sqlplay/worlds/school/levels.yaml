@@ -1,0 +1,633 @@
+# ---------------------------------------------------------------- select
+- id: s01
+  topic: select
+  difficulty: 2
+  question: >
+    Show the title, units and fee of every course in the 'Math' category whose fee is
+    below 400.00. Use the column names title, units and fee as they are (no aliases needed).
+  columns: ["title", "units", "fee"]
+  answer: |
+    SELECT title, units, fee
+    FROM course
+    WHERE category = 'Math'
+      AND fee < 400;
+  hints:
+    - Two conditions must both be true, so join them with AND in the WHERE clause.
+    - "SELECT title, units, fee FROM course WHERE category = '____' AND fee ____ 400;"
+    - "SELECT title, units, fee FROM course WHERE category = 'Math' AND fee ____;"
+  explain: >
+    WHERE keeps only the rows where every condition is true. Text values go in single quotes and
+    must match the stored case exactly ('Math', not 'MATH'). Numbers are compared without quotes.
+
+- id: s02
+  topic: select
+  difficulty: 3
+  question: >
+    List the first name and last name of every student who lives in MILLBANK or RIVERTON, is in
+    grade 11 or 12, and has no mentor. Use the column names firstname and lastname.
+  columns: ["firstname", "lastname"]
+  answer: |
+    SELECT firstname, lastname
+    FROM student
+    WHERE city IN ('MILLBANK', 'RIVERTON')
+      AND gradelevel >= 11
+      AND mentorid IS NULL;
+  hints:
+    - Mixing OR with AND needs parentheses (or IN). "No mentor" means the mentorid column is empty, which needs a special test.
+    - "SELECT firstname, lastname FROM student WHERE city IN ('____', '____') AND gradelevel ____ AND mentorid ____;"
+    - "SELECT firstname, lastname FROM student WHERE city IN ('MILLBANK', 'RIVERTON') AND gradelevel >= 11 AND mentorid ____;"
+  explain: >
+    AND is evaluated before OR, so "city = 'MILLBANK' OR city = 'RIVERTON' AND ..." would attach the
+    other conditions to RIVERTON only. IN (...) or parentheses avoid that. An empty value is NULL,
+    and NULL is never equal to anything, so you must write IS NULL rather than = NULL.
+
+# ---------------------------------------------------------------- shape
+- id: sh01
+  topic: shape
+  difficulty: 3
+  question: >
+    For every grade 12 student, show their full name (first name, a space, last name) labelled
+    'Student' and their city labelled 'Town'. Sort by town A to Z, then by full name A to Z.
+  columns: ["Student", "Town"]
+  ordered: true
+  order_note: "Town A-Z, then Student A-Z"
+  answer: |
+    SELECT s.firstname || ' ' || s.lastname AS "Student", s.city AS "Town"
+    FROM student s
+    WHERE s.gradelevel = 12
+    ORDER BY "Town", "Student";
+  hints:
+    - Glue text together with || (or CONCAT), rename columns with AS, and sort with ORDER BY on two columns.
+    - "SELECT firstname || ' ' || ____ AS \"Student\", city AS \"____\" FROM student WHERE gradelevel = 12 ORDER BY ____, ____;"
+    - "SELECT firstname || ' ' || lastname AS \"Student\", city AS \"Town\" FROM student WHERE gradelevel = 12 ORDER BY \"Town\", ____;"
+  explain: >
+    || joins strings, so firstname || ' ' || lastname builds "LIAM ABERNATHY". Labels with capitals
+    or spaces need double quotes. ORDER BY with two columns sorts by the first, and only uses the
+    second to order rows that tie on the first.
+
+- id: sh02
+  topic: shape
+  difficulty: 3
+  question: >
+    For every course in the 'Science' category, show the title labelled 'Course', the fee labelled
+    'Fee', and the margin (fee minus materials cost) labelled 'Margin'. Sort by margin, highest first.
+  columns: ["Course", "Fee", "Margin"]
+  ordered: true
+  order_note: "Margin, highest first"
+  answer: |
+    SELECT c.title AS "Course", c.fee AS "Fee", c.fee - c.matcost AS "Margin"
+    FROM course c
+    WHERE c.category = 'Science'
+    ORDER BY "Margin" DESC;
+  hints:
+    - You can compute a new column with arithmetic in the SELECT list, give it a label with AS, and sort by that label.
+    - "SELECT title AS \"Course\", fee AS \"Fee\", ____ - ____ AS \"Margin\" FROM course WHERE category = 'Science' ORDER BY ____;"
+    - "SELECT title AS \"Course\", fee AS \"Fee\", fee - matcost AS \"Margin\" FROM course WHERE category = 'Science' ORDER BY \"Margin\" ____;"
+  explain: >
+    fee - matcost is calculated for each row. ORDER BY can use the output label, and DESC flips the
+    order so the biggest margin comes first. Note ROBOTICS is in the 'Science' category even though
+    the TECHNOLOGY department runs it, so filter on category, not department.
+
+- id: sh03
+  topic: shape
+  difficulty: 3
+  question: >
+    List every room that hosts at least one section with a capacity of 24 or more. Show each room
+    only once, labelled 'Room', sorted A to Z.
+  columns: ["Room"]
+  ordered: true
+  order_note: "Room A-Z"
+  answer: |
+    SELECT DISTINCT s.room AS "Room"
+    FROM section s
+    WHERE s.capacity >= 24
+    ORDER BY "Room";
+  hints:
+    - Several sections share a room. DISTINCT removes repeated rows from the result.
+    - "SELECT DISTINCT room AS \"Room\" FROM section WHERE capacity ____ 24 ORDER BY ____;"
+    - "SELECT DISTINCT room AS \"Room\" FROM section WHERE capacity >= 24 ORDER BY ____;"
+  explain: >
+    Without DISTINCT, rooms like R110 or C01 appear once per section. "24 or more" means >= 24, not > 24.
+    DISTINCT goes right after SELECT and applies to the whole output row.
+
+# ---------------------------------------------------------------- aggregates
+- id: a01
+  topic: aggregates
+  difficulty: 2
+  question: >
+    How many students live in NORTHFIELD? Show one number labelled 'Students'.
+  columns: ["Students"]
+  answer: |
+    SELECT COUNT(*) AS "Students"
+    FROM student
+    WHERE city = 'NORTHFIELD';
+  hints:
+    - COUNT(*) counts the rows that survive the WHERE clause.
+    - "SELECT COUNT(____) AS \"Students\" FROM student WHERE city = '____';"
+    - "SELECT COUNT(*) AS \"Students\" FROM student WHERE ____;"
+  explain: >
+    WHERE runs first and keeps only NORTHFIELD students, then COUNT(*) counts what is left and
+    returns a single row.
+
+- id: a02
+  topic: aggregates
+  difficulty: 3
+  question: >
+    For courses in the 'Arts' category, show the highest fee labelled 'Highest', the lowest fee
+    labelled 'Lowest', and the average fee rounded to 2 decimals labelled 'Average'.
+  columns: ["Highest", "Lowest", "Average"]
+  answer: |
+    SELECT MAX(c.fee) AS "Highest", MIN(c.fee) AS "Lowest", ROUND(AVG(c.fee), 2) AS "Average"
+    FROM course c
+    WHERE c.category = 'Arts';
+  hints:
+    - MAX, MIN and AVG can all appear in the same SELECT; filter the rows first with WHERE.
+    - "SELECT MAX(fee) AS \"Highest\", ____(fee) AS \"Lowest\", ROUND(____(fee), 2) AS \"Average\" FROM course WHERE ____;"
+    - "SELECT MAX(fee) AS \"Highest\", MIN(fee) AS \"Lowest\", ROUND(AVG(fee), 2) AS \"Average\" FROM course WHERE category = ____;"
+  explain: >
+    Aggregate functions squash all the remaining rows into one result row. ROUND(value, 2) keeps two
+    decimals. The WHERE filter limits the calculation to the five Arts courses.
+
+- id: a03
+  topic: aggregates
+  difficulty: 4
+  question: >
+    Using the enrollment table, show two numbers: how many different students have at least one
+    enrollment, labelled 'Students', and how many enrollments have a grade recorded (grade is not
+    NULL), labelled 'Graded'.
+  columns: ["Students", "Graded"]
+  answer: |
+    SELECT COUNT(DISTINCT e.studentid) AS "Students", COUNT(e.grade) AS "Graded"
+    FROM enrollment e;
+  hints:
+    - COUNT(DISTINCT column) counts different values; COUNT(column) skips NULLs, unlike COUNT(*).
+    - "SELECT COUNT(____ studentid) AS \"Students\", COUNT(____) AS \"Graded\" FROM enrollment;"
+    - "SELECT COUNT(DISTINCT studentid) AS \"Students\", COUNT(____) AS \"Graded\" FROM enrollment;"
+  explain: >
+    Most students have several enrollments, so COUNT(studentid) would count them many times;
+    COUNT(DISTINCT studentid) counts each student once. COUNT(grade) counts only rows where grade is
+    not NULL, so the in-progress 2025-FALL enrollments are left out.
+
+# ---------------------------------------------------------------- subqueries
+- id: q01
+  topic: subqueries
+  difficulty: 3
+  question: >
+    List every course whose fee is higher than the average fee of all courses. Show the title
+    labelled 'Course', the fee labelled 'Fee', and the name of the department that runs it
+    labelled 'Department'. Sort by fee, highest first.
+  columns: ["Course", "Fee", "Department"]
+  ordered: true
+  order_note: "Fee, highest first"
+  answer: |
+    SELECT c.title AS "Course", c.fee AS "Fee", d.deptname AS "Department"
+    FROM course c
+    JOIN department d ON d.deptid = c.deptid
+    WHERE c.fee > (SELECT AVG(fee) FROM course)
+    ORDER BY "Fee" DESC;
+  hints:
+    - You cannot write WHERE fee > AVG(fee) directly. Compute the average in a subquery in brackets, and JOIN department for its name.
+    - "SELECT c.title AS \"Course\", c.fee AS \"Fee\", d.deptname AS \"Department\" FROM course c JOIN department d ON ____ WHERE c.fee > (SELECT ____ FROM course) ORDER BY ____;"
+    - "... WHERE c.fee > (SELECT AVG(fee) FROM course) ORDER BY ____;"
+  explain: >
+    The subquery (SELECT AVG(fee) FROM course) runs once and returns a single number, which the outer
+    WHERE compares each course against. The JOIN on deptid brings in the department name.
+
+- id: q02
+  topic: subqueries
+  difficulty: 3
+  question: >
+    Which course in the 'Science' category has the highest fee? Show its title labelled 'Course',
+    its fee labelled 'Fee', and the name of the department that runs it labelled 'Department'.
+  columns: ["Course", "Fee", "Department"]
+  answer: |
+    SELECT c.title AS "Course", c.fee AS "Fee", d.deptname AS "Department"
+    FROM course c
+    JOIN department d ON d.deptid = c.deptid
+    WHERE c.category = 'Science'
+      AND c.fee = (SELECT MAX(fee) FROM course WHERE category = 'Science');
+  hints:
+    - Find the top Science fee with a MAX subquery, then match the course with that fee. The filter must appear inside the subquery too.
+    - "SELECT c.title AS \"Course\", c.fee AS \"Fee\", d.deptname AS \"Department\" FROM course c JOIN department d ON c.deptid = d.deptid WHERE c.category = 'Science' AND c.fee = (SELECT ____ FROM course WHERE ____);"
+    - "... AND c.fee = (SELECT MAX(fee) FROM course WHERE category = ____);"
+  explain: >
+    The subquery finds the largest fee among Science courses only. If you forget its WHERE, MAX finds
+    the most expensive course overall (DATABASES, a Computing course) and nothing matches. The answer
+    is run by TECHNOLOGY, which shows that category and department are different things.
+
+- id: q03
+  topic: subqueries
+  difficulty: 4
+  question: >
+    List the courses run by the same department as 'GEOMETRY' whose margin (fee minus materials
+    cost) is higher than the average margin of all courses. Show the title labelled 'Course' and
+    the margin labelled 'Margin'. (GEOMETRY itself would count if it qualified.)
+  columns: ["Course", "Margin"]
+  answer: |
+    SELECT c.title AS "Course", c.fee - c.matcost AS "Margin"
+    FROM course c
+    WHERE c.deptid = (SELECT deptid FROM course WHERE title = 'GEOMETRY')
+      AND c.fee - c.matcost > (SELECT AVG(fee - matcost) FROM course);
+  hints:
+    - Use two subqueries - one looks up GEOMETRY's department, the other computes AVG(fee - matcost) over every course.
+    - "SELECT title AS \"Course\", fee - matcost AS \"Margin\" FROM course WHERE deptid = (SELECT ____ FROM course WHERE title = 'GEOMETRY') AND fee - matcost > (SELECT ____ FROM course);"
+    - "... AND fee - matcost > (SELECT AVG(____) FROM course);"
+  explain: >
+    The first subquery returns 'MATH', so the outer query looks only at that department. The second
+    returns the average margin of all 26 courses. A course must pass both tests. You can do
+    arithmetic inside AVG, so AVG(fee - matcost) averages the margins.
+
+- id: q04
+  topic: subqueries
+  difficulty: 4
+  question: >
+    List every student who lives in the same city as at least one student who enrolled in
+    'CERAMICS' (the CERAMICS students themselves count too). Show the full name (first name, a
+    space, last name) labelled 'Student', sorted A to Z.
+  columns: ["Student"]
+  ordered: true
+  order_note: "Student A-Z"
+  answer: |
+    SELECT s.firstname || ' ' || s.lastname AS "Student"
+    FROM student s
+    WHERE s.city IN (SELECT s2.city
+                     FROM student s2
+                     JOIN enrollment e ON e.studentid = s2.studentid
+                     JOIN section sc ON sc.sectionid = e.sectionid
+                     JOIN course c ON c.courseid = sc.courseid
+                     WHERE c.title = 'CERAMICS')
+    ORDER BY "Student";
+  hints:
+    - The subquery can return several cities, so use IN. Inside it, walk student -> enrollment -> section -> course to reach the title.
+    - "SELECT firstname || ' ' || lastname AS \"Student\" FROM student WHERE city IN (SELECT s2.city FROM student s2 JOIN enrollment e ON ____ JOIN section sc ON ____ JOIN course c ON ____ WHERE c.title = 'CERAMICS') ORDER BY 1;"
+    - "... WHERE city IN (SELECT s2.city FROM student s2 JOIN enrollment e ON e.studentid = s2.studentid JOIN section sc ON sc.sectionid = e.sectionid JOIN course c ON c.courseid = sc.courseid WHERE ____) ORDER BY 1;"
+  explain: >
+    The subquery returns the cities of the CERAMICS students (OAKDALE and RIVERTON). The outer query
+    then picks every student in one of those cities, including students who never enrolled in
+    anything. Use IN, not =, because the subquery returns more than one row.
+
+- id: q05
+  topic: subqueries
+  difficulty: 5
+  question: >
+    Among the courses that at least one student has enrolled in, find the one with the lowest fee.
+    List the full names (first name, a space, last name) of the students enrolled in it, labelled
+    'Student', each once.
+  columns: ["Student"]
+  answer: |
+    SELECT DISTINCT s.firstname || ' ' || s.lastname AS "Student"
+    FROM student s
+    JOIN enrollment e ON e.studentid = s.studentid
+    JOIN section sc ON sc.sectionid = e.sectionid
+    JOIN course c ON c.courseid = sc.courseid
+    WHERE c.fee = (SELECT MIN(c2.fee)
+                   FROM course c2
+                   WHERE c2.courseid IN (SELECT sc2.courseid
+                                         FROM section sc2
+                                         JOIN enrollment e2 ON e2.sectionid = sc2.sectionid));
+  hints:
+    - The overall cheapest course (THEATRE) has a section but nobody in it. Restrict the MIN to courses that appear in enrolled sections - a subquery inside a subquery.
+    - "... WHERE c.fee = (SELECT MIN(fee) FROM course WHERE courseid IN (SELECT sc2.courseid FROM section sc2 JOIN enrollment e2 ON ____));"
+    - "SELECT DISTINCT s.firstname || ' ' || s.lastname AS \"Student\" FROM student s JOIN enrollment e ON e.studentid = s.studentid JOIN section sc ON sc.sectionid = e.sectionid JOIN course c ON c.courseid = sc.courseid WHERE c.fee = (SELECT MIN(fee) FROM course WHERE courseid IN (____));"
+  explain: >
+    The innermost query lists courses that have real enrollments, the middle one takes the lowest fee
+    among them (MUSIC THEORY), and the outer query walks the four-table chain to find who took it.
+    A plain MIN(fee) over all courses gives THEATRE, which nobody took, so you would get no rows.
+
+# ---------------------------------------------------------------- joins
+- id: j01
+  topic: joins
+  difficulty: 3
+  question: >
+    List the titles of all courses that MATEO LOPEZ has enrolled in. Show each title only once,
+    labelled 'Course', sorted A to Z.
+  columns: ["Course"]
+  ordered: true
+  order_note: "Course A-Z"
+  answer: |
+    SELECT DISTINCT c.title AS "Course"
+    FROM student s
+    JOIN enrollment e ON e.studentid = s.studentid
+    JOIN section sc ON sc.sectionid = e.sectionid
+    JOIN course c ON c.courseid = sc.courseid
+    WHERE s.firstname = 'MATEO' AND s.lastname = 'LOPEZ'
+    ORDER BY "Course";
+  hints:
+    - Follow the chain student -> enrollment -> section -> course. He retook one course, so you need DISTINCT.
+    - "SELECT DISTINCT c.title AS \"Course\" FROM student s JOIN enrollment e ON ____ JOIN section sc ON ____ JOIN course c ON ____ WHERE s.firstname = 'MATEO' AND s.lastname = 'LOPEZ' ORDER BY 1;"
+    - "... JOIN section sc ON sc.sectionid = e.sectionid JOIN course c ON c.courseid = ____ WHERE ... ORDER BY 1;"
+  explain: >
+    Each JOIN links two neighbouring tables on the column they share. MATEO took ALGEBRA I in two
+    different terms (two sections), so without DISTINCT that title would appear twice.
+
+- id: j02
+  topic: joins
+  difficulty: 3
+  question: >
+    List every course that teacher ERIK LINDQVIST teaches, showing the course title labelled 'Course'
+    and the name of the department that runs the course labelled 'Department'.
+  columns: ["Course", "Department"]
+  answer: |
+    SELECT c.title AS "Course", d.deptname AS "Department"
+    FROM teacher t
+    JOIN courseteacher ct ON ct.teacherid = t.teacherid
+    JOIN course c ON c.courseid = ct.courseid
+    JOIN department d ON d.deptid = c.deptid
+    WHERE t.firstname = 'ERIK' AND t.lastname = 'LINDQVIST';
+  hints:
+    - Teachers connect to courses only through the courseteacher link table; then the course points to its department.
+    - "SELECT c.title AS \"Course\", d.deptname AS \"Department\" FROM teacher t JOIN courseteacher ct ON ____ JOIN course c ON ____ JOIN department d ON ____ WHERE t.lastname = 'LINDQVIST';"
+    - "... JOIN department d ON d.deptid = c.deptid WHERE t.firstname = 'ERIK' AND t.lastname = ____;"
+  explain: >
+    courseteacher has one row per (course, teacher) pair, so it bridges the two tables. Join the
+    department through the course (c.deptid), not through the teacher - ERIK is a science teacher
+    but also teaches ROBOTICS, which TECHNOLOGY runs.
+
+- id: j03
+  topic: joins
+  difficulty: 4
+  question: >
+    Find the course in the 'Language' category with the highest materials cost, and list the
+    students who enrolled in it. Show the full name (first name, a space, last name) labelled
+    'Student' and the term of their section labelled 'Term', sorted by student A to Z.
+  columns: ["Student", "Term"]
+  ordered: true
+  order_note: "Student A-Z"
+  answer: |
+    SELECT s.firstname || ' ' || s.lastname AS "Student", sc.term AS "Term"
+    FROM student s
+    JOIN enrollment e ON e.studentid = s.studentid
+    JOIN section sc ON sc.sectionid = e.sectionid
+    JOIN course c ON c.courseid = sc.courseid
+    WHERE c.category = 'Language'
+      AND c.matcost = (SELECT MAX(matcost) FROM course WHERE category = 'Language')
+    ORDER BY "Student";
+  hints:
+    - Join the four-table chain from student to course, and pick the course with a MAX(matcost) subquery limited to 'Language'.
+    - "SELECT s.firstname || ' ' || s.lastname AS \"Student\", sc.term AS \"Term\" FROM student s JOIN enrollment e ON ____ JOIN section sc ON ____ JOIN course c ON ____ WHERE c.category = 'Language' AND c.matcost = (SELECT ____) ORDER BY 1;"
+    - "... AND c.matcost = (SELECT MAX(matcost) FROM course WHERE ____) ORDER BY 1;"
+  explain: >
+    The subquery finds the top materials cost among Language courses (ENGLISH LITERATURE). The join
+    chain then lists who enrolled in any of its sections, and the term comes from the section table.
+    Keep c.category = 'Language' in the outer query too - GEOMETRY also has a materials cost of 30.00.
+
+- id: j04
+  topic: joins
+  difficulty: 4
+  question: >
+    List every enrollment with a grade of 90 or more in a 2024-FALL section of a course in the
+    'Science' or 'Math' category. Show the student's full name (first name, a space, last name)
+    labelled 'Student', the course title labelled 'Course', and the grade labelled 'Grade',
+    sorted by grade, highest first.
+  columns: ["Student", "Course", "Grade"]
+  ordered: true
+  order_note: "Grade, highest first"
+  answer: |
+    SELECT s.firstname || ' ' || s.lastname AS "Student", c.title AS "Course", e.grade AS "Grade"
+    FROM student s
+    JOIN enrollment e ON e.studentid = s.studentid
+    JOIN section sc ON sc.sectionid = e.sectionid
+    JOIN course c ON c.courseid = sc.courseid
+    WHERE sc.term = '2024-FALL'
+      AND c.category IN ('Science', 'Math')
+      AND e.grade >= 90
+    ORDER BY "Grade" DESC;
+  hints:
+    - The grade lives in enrollment, the term in section, the category in course - join all of them and combine the filters, minding AND/OR.
+    - "... WHERE sc.term = '____' AND c.category IN ('____', '____') AND e.grade ____ ORDER BY \"Grade\" DESC;"
+    - "SELECT s.firstname || ' ' || s.lastname AS \"Student\", c.title AS \"Course\", e.grade AS \"Grade\" FROM student s JOIN enrollment e ON e.studentid = s.studentid JOIN section sc ON sc.sectionid = e.sectionid JOIN course c ON c.courseid = sc.courseid WHERE ____ ORDER BY \"Grade\" DESC;"
+  explain: >
+    After joining, each row is one enrollment with its section and course attached, so you can
+    filter on columns from any of the tables. Writing category = 'Science' OR category = 'Math'
+    without parentheses would let every 'Math' row through regardless of term and grade; IN avoids it.
+
+- id: j05
+  topic: joins
+  difficulty: 5
+  question: >
+    List the teachers who teach at least one course in the same category as any course that
+    ISABELA RAMOS has enrolled in. Show each teacher's full name (first name, a space, last name)
+    once, labelled 'Teacher', sorted A to Z.
+  columns: ["Teacher"]
+  ordered: true
+  order_note: "Teacher A-Z"
+  answer: |
+    SELECT DISTINCT t.firstname || ' ' || t.lastname AS "Teacher"
+    FROM teacher t
+    JOIN courseteacher ct ON ct.teacherid = t.teacherid
+    JOIN course c ON c.courseid = ct.courseid
+    WHERE c.category IN (SELECT c2.category
+                         FROM student s
+                         JOIN enrollment e ON e.studentid = s.studentid
+                         JOIN section sc ON sc.sectionid = e.sectionid
+                         JOIN course c2 ON c2.courseid = sc.courseid
+                         WHERE s.firstname = 'ISABELA' AND s.lastname = 'RAMOS')
+    ORDER BY "Teacher";
+  hints:
+    - Two chains - student -> enrollment -> section -> course gives her categories; teacher -> courseteacher -> course finds who teaches in those categories.
+    - "SELECT DISTINCT t.firstname || ' ' || t.lastname AS \"Teacher\" FROM teacher t JOIN courseteacher ct ON ____ JOIN course c ON ____ WHERE c.category IN (SELECT c2.category FROM ____ WHERE s.firstname = 'ISABELA' AND s.lastname = 'RAMOS') ORDER BY 1;"
+    - "... WHERE c.category IN (SELECT c2.category FROM student s JOIN enrollment e ON e.studentid = s.studentid JOIN section sc ON ____ JOIN course c2 ON ____ WHERE s.firstname = 'ISABELA' AND s.lastname = 'RAMOS') ORDER BY 1;"
+  explain: >
+    The subquery returns her categories ('Science' and 'Math'). The outer query finds every teacher
+    linked to a course in those categories - including ROBOTICS teachers, because ROBOTICS is a
+    'Science' course. DISTINCT is needed because many teachers teach several matching courses.
+
+# ---------------------------------------------------------------- selfleft
+- id: l01
+  topic: selfleft
+  difficulty: 3
+  question: >
+    List the students who mentor at least one other student. Show each mentor's full name (first
+    name, a space, last name) once, labelled 'Mentor', sorted A to Z.
+  columns: ["Mentor"]
+  ordered: true
+  order_note: "Mentor A-Z"
+  answer: |
+    SELECT DISTINCT m.firstname || ' ' || m.lastname AS "Mentor"
+    FROM student s
+    JOIN student m ON m.studentid = s.mentorid
+    ORDER BY "Mentor";
+  hints:
+    - Join the student table to itself with two aliases - one copy for the mentee, one for the mentor.
+    - "SELECT DISTINCT m.firstname || ' ' || m.lastname AS \"Mentor\" FROM student s JOIN student m ON m.studentid = ____ ORDER BY 1;"
+    - "SELECT DISTINCT m.firstname || ' ' || m.lastname AS \"Mentor\" FROM student s JOIN student m ON ____ ORDER BY 1;"
+  explain: >
+    Each mentee row s points at its mentor through s.mentorid, and m.studentid = s.mentorid finds that
+    mentor row. Mentors with several mentees appear once per mentee, so DISTINCT is required.
+
+- id: l02
+  topic: selfleft
+  difficulty: 3
+  question: >
+    List the students who have never enrolled in any section. Show the full name (first name, a
+    space, last name) labelled 'Student'.
+  columns: ["Student"]
+  answer: |
+    SELECT s.firstname || ' ' || s.lastname AS "Student"
+    FROM student s
+    LEFT JOIN enrollment e ON e.studentid = s.studentid
+    WHERE e.studentid IS NULL;
+  hints:
+    - A LEFT JOIN keeps every student; the ones with no enrollment get NULLs in the enrollment columns.
+    - "SELECT s.firstname || ' ' || s.lastname AS \"Student\" FROM student s LEFT JOIN enrollment e ON ____ WHERE ____ IS NULL;"
+    - "SELECT s.firstname || ' ' || s.lastname AS \"Student\" FROM student s LEFT JOIN enrollment e ON e.studentid = s.studentid WHERE ____;"
+  explain: >
+    An inner JOIN would drop students without enrollments. LEFT JOIN keeps them and fills the
+    enrollment side with NULL, so WHERE e.studentid IS NULL keeps exactly the unmatched students.
+
+- id: l03
+  topic: selfleft
+  difficulty: 4
+  question: >
+    For every student whose mentor lives in a different city from them, show the student's full
+    name labelled 'Student', the mentor's full name labelled 'Mentor' (both as first name, a space,
+    last name), and the mentor's city labelled 'Mentor City'. Sort by student A to Z.
+  columns: ["Student", "Mentor", "Mentor City"]
+  ordered: true
+  order_note: "Student A-Z"
+  answer: |
+    SELECT s.firstname || ' ' || s.lastname AS "Student",
+           m.firstname || ' ' || m.lastname AS "Mentor",
+           m.city AS "Mentor City"
+    FROM student s
+    JOIN student m ON m.studentid = s.mentorid
+    WHERE s.city <> m.city
+    ORDER BY "Student";
+  hints:
+    - Self-join student to student (mentee and mentor), then compare a column from each copy.
+    - "SELECT s.firstname || ' ' || s.lastname AS \"Student\", m.firstname || ' ' || m.lastname AS \"Mentor\", m.city AS \"Mentor City\" FROM student s JOIN student m ON ____ WHERE ____ ORDER BY 1;"
+    - "... JOIN student m ON m.studentid = s.mentorid WHERE ____ ORDER BY 1;"
+  explain: >
+    With two aliases you can compare the same column across two rows of one table: s.city is the
+    mentee's city, m.city is the mentor's. <> means "not equal". Students without a mentor drop out
+    of the inner join automatically.
+
+- id: l04
+  topic: selfleft
+  difficulty: 5
+  question: >
+    Which courses in the 'Science' or 'Math' category had nobody enrolled in the 2024-FALL term?
+    Courses that had no 2024-FALL section at all count too. Show the title labelled 'Course',
+    sorted A to Z.
+  columns: ["Course"]
+  ordered: true
+  order_note: "Course A-Z"
+  answer: |
+    SELECT c.title AS "Course"
+    FROM course c
+    LEFT JOIN section sc ON sc.courseid = c.courseid AND sc.term = '2024-FALL'
+    LEFT JOIN enrollment e ON e.sectionid = sc.sectionid
+    WHERE c.category IN ('Science', 'Math')
+      AND e.studentid IS NULL
+    ORDER BY "Course";
+  hints:
+    - Use LEFT JOINs from course and look for NULLs, but put the term condition inside the ON clause - in WHERE it would throw away the courses you want.
+    - "SELECT c.title AS \"Course\" FROM course c LEFT JOIN section sc ON sc.courseid = c.courseid AND sc.term = '____' LEFT JOIN enrollment e ON ____ WHERE c.category IN ('Science', 'Math') AND ____ IS NULL ORDER BY 1;"
+    - "... LEFT JOIN enrollment e ON e.sectionid = sc.sectionid WHERE c.category IN ('Science', 'Math') AND ____ ORDER BY 1;"
+  explain: >
+    The term test lives in ON so that courses without a 2024-FALL section still survive the LEFT JOIN
+    (with NULLs). If you wrote sc.term = '2024-FALL' in WHERE, those NULL rows would be removed.
+    An equivalent approach is NOT IN (a subquery listing course ids with 2024-FALL enrollments).
+
+# ---------------------------------------------------------------- groupby
+- id: g01
+  topic: groupby
+  difficulty: 3
+  question: >
+    For each course category, show the category labelled 'Category' and how many courses are in it
+    labelled 'Courses'. Sort by the number of courses, highest first, then by category A to Z.
+  columns: ["Category", "Courses"]
+  ordered: true
+  order_note: "Courses highest first, then Category A-Z"
+  answer: |
+    SELECT c.category AS "Category", COUNT(*) AS "Courses"
+    FROM course c
+    GROUP BY c.category
+    ORDER BY "Courses" DESC, "Category";
+  hints:
+    - GROUP BY category makes one bucket per category; COUNT(*) then counts the rows in each bucket instead of the whole table.
+    - "SELECT category AS \"Category\", COUNT(*) AS \"Courses\" FROM course GROUP BY ____ ORDER BY ____ DESC, ____;"
+    - "SELECT category AS \"Category\", COUNT(*) AS \"Courses\" FROM course GROUP BY category ORDER BY ____;"
+  explain: >
+    Without GROUP BY, COUNT(*) gives one number for the whole table. GROUP BY category splits the rows
+    into groups that share a category and produces one output row per group. Every non-aggregated
+    column in SELECT must appear in GROUP BY.
+
+- id: g02
+  topic: groupby
+  difficulty: 4
+  question: >
+    For each department that runs at least 5 courses, show the department name labelled
+    'Department' and the average fee of its courses, rounded to 2 decimals, labelled 'Average Fee'.
+    Sort by average fee, highest first.
+  columns: ["Department", "Average Fee"]
+  ordered: true
+  order_note: "Average Fee, highest first"
+  answer: |
+    SELECT d.deptname AS "Department", ROUND(AVG(c.fee), 2) AS "Average Fee"
+    FROM department d
+    JOIN course c ON c.deptid = d.deptid
+    GROUP BY d.deptname
+    HAVING COUNT(*) >= 5
+    ORDER BY "Average Fee" DESC;
+  hints:
+    - JOIN department to course, GROUP BY the department, and filter whole groups with HAVING (WHERE cannot use COUNT).
+    - "SELECT d.deptname AS \"Department\", ROUND(AVG(c.fee), 2) AS \"Average Fee\" FROM department d JOIN course c ON ____ GROUP BY ____ HAVING ____ ORDER BY 2 DESC;"
+    - "... GROUP BY d.deptname HAVING COUNT(*) ____ ORDER BY 2 DESC;"
+  explain: >
+    WHERE filters single rows before grouping; HAVING filters groups after grouping, so conditions on
+    COUNT, AVG and friends belong in HAVING. TECHNOLOGY has the highest average fee but only 4
+    courses, so HAVING removes it.
+
+- id: g03
+  topic: groupby
+  difficulty: 4
+  question: >
+    For each student who has at least 4 enrollments with a grade recorded, show the full name
+    (first name, a space, last name) labelled 'Student' and their average grade, rounded to 2
+    decimals, labelled 'Average Grade'. Sort by average grade, highest first.
+  columns: ["Student", "Average Grade"]
+  ordered: true
+  order_note: "Average Grade, highest first"
+  answer: |
+    SELECT s.firstname || ' ' || s.lastname AS "Student", ROUND(AVG(e.grade), 2) AS "Average Grade"
+    FROM student s
+    JOIN enrollment e ON e.studentid = s.studentid
+    GROUP BY s.studentid, s.firstname, s.lastname
+    HAVING COUNT(e.grade) >= 4
+    ORDER BY "Average Grade" DESC;
+  hints:
+    - Group the joined rows by student. COUNT(e.grade) counts only graded enrollments, while COUNT(*) also counts NULL grades.
+    - "SELECT s.firstname || ' ' || s.lastname AS \"Student\", ROUND(AVG(e.grade), 2) AS \"Average Grade\" FROM student s JOIN enrollment e ON ____ GROUP BY s.studentid, s.firstname, s.lastname HAVING ____ ORDER BY 2 DESC;"
+    - "... GROUP BY s.studentid, s.firstname, s.lastname HAVING COUNT(____) >= 4 ORDER BY 2 DESC;"
+  explain: >
+    GROUP BY makes one group per student; AVG and COUNT then work inside each group. AVG already
+    ignores NULL grades, but HAVING COUNT(*) >= 4 would also count in-progress enrollments and let in
+    students with only 3 grades. Grouping by studentid keeps two students with the same name apart.
+
+- id: g04
+  topic: groupby
+  difficulty: 5
+  question: >
+    For every course in the 'Science' category, show the title labelled 'Course' and the total
+    number of enrollments across all its sections labelled 'Enrollments' (show 0 for courses
+    nobody has enrolled in). Sort by enrollments, highest first, then by course title A to Z.
+  columns: ["Course", "Enrollments"]
+  ordered: true
+  order_note: "Enrollments highest first, then Course A-Z"
+  answer: |
+    SELECT c.title AS "Course", COUNT(e.studentid) AS "Enrollments"
+    FROM course c
+    LEFT JOIN section sc ON sc.courseid = c.courseid
+    LEFT JOIN enrollment e ON e.sectionid = sc.sectionid
+    WHERE c.category = 'Science'
+    GROUP BY c.courseid, c.title
+    ORDER BY "Enrollments" DESC, "Course";
+  hints:
+    - To keep courses with no enrollments you need LEFT JOINs, and to count only real matches you must COUNT a column from the enrollment side, not COUNT(*).
+    - "SELECT c.title AS \"Course\", COUNT(____) AS \"Enrollments\" FROM course c LEFT JOIN section sc ON ____ LEFT JOIN enrollment e ON ____ WHERE c.category = 'Science' GROUP BY c.courseid, c.title ORDER BY 2 DESC, 1;"
+    - "SELECT c.title AS \"Course\", COUNT(e.____) AS \"Enrollments\" FROM course c LEFT JOIN section sc ON sc.courseid = c.courseid LEFT JOIN enrollment e ON e.sectionid = sc.sectionid WHERE c.category = 'Science' GROUP BY c.courseid, c.title ORDER BY \"Enrollments\" DESC, \"Course\";"
+  explain: >
+    An inner JOIN would drop ASTRONOMY entirely. With LEFT JOIN it stays as one row of NULLs, and
+    COUNT(e.studentid) counts 0 for it because COUNT(column) skips NULLs - COUNT(*) would wrongly
+    say 1. GROUP BY then gives one row per course.

@@ -1,0 +1,14 @@
+name: Silver Screen Rentals
+emoji: "🎬"
+blurb: A neighbourhood movie rental chain with members, four branches, a catalog of films, their studios and their actors.
+join_map: |
+  member -memberid- rental -rentalid- rentalitem -movieid- movie -studioid- studio
+  movie -movieid- movieactor -actorid- actor
+  member.invitedby -> member.memberid   (who invited this member)
+  movie.sequelof -> movie.movieid       (the movie this one is a sequel of)
+notes: |
+  Names, titles, cities and branches are stored in CAPITALS. Genres are mixed case ('Drama', 'Comedy', 'Sci-Fi', ...).
+  Actor names are in actor.fname / actor.lname (member uses firstname / lastname).
+  movie.price is the rental price per day; movie.cost is what the store pays the studio per day, so profit per day = price - cost.
+  movie.budget is the production budget in millions of dollars; runtime is in minutes; rating is out of 10.
+  rentalitem.days is how many days the movie was rented for. rental.returndate is NULL when the rental has not been returned yet.

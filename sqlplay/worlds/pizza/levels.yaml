@@ -1,0 +1,743 @@
+# Slice Society levels. hoa1..hoa10 re-cast the bookstore HOA questions.
+
+# ------------------------------------------------------------------ HOA re-casts
+- id: hoa1
+  topic: subqueries
+  difficulty: 3
+  question: >
+    What is the most expensive (highest price) pizza in the 'Specialty' category?
+    Show the pizza's name, its price and the name of its supplier, labelled
+    "Pizza", "Price" and "Supplier Name".
+  columns: ["Pizza", "Price", "Supplier Name"]
+  answer: |
+    SELECT p.pizzaname AS "Pizza", p.price AS "Price", s.suppliername AS "Supplier Name"
+    FROM pizza p
+    JOIN supplier s ON p.supplierid = s.supplierid
+    WHERE p.category = 'Specialty'
+      AND p.price = (SELECT MAX(price) FROM pizza WHERE category = 'Specialty');
+  hints:
+    - Two ideas combined. A subquery finds the highest Specialty price; a JOIN to supplier gets the supplier's name.
+    - "SELECT p.pizzaname AS \"Pizza\", p.price AS \"Price\", s.suppliername AS \"Supplier Name\" FROM pizza p JOIN supplier s ON ____ WHERE p.category = 'Specialty' AND p.price = (SELECT ____ FROM pizza WHERE ____);"
+    - "... WHERE p.category = 'Specialty' AND p.price = (SELECT MAX(price) FROM pizza WHERE category = ____);"
+  explain: >
+    The subquery (SELECT MAX(price) ... WHERE category = 'Specialty') returns one number, the top
+    Specialty price. The outer query keeps the pizza with exactly that price and JOINs supplier to
+    turn supplierid into a name. Note the overall most expensive pizza is a Meaty one (MEAT FEAST),
+    so forgetting the category filter inside the subquery gives the wrong pizza or no rows at all.
+
+- id: hoa2
+  topic: selfleft
+  difficulty: 3
+  question: >
+    Which customers have referred other customers? Show each referring customer once, with
+    their customer number labelled "Customer Number" and their full name (first name, a space,
+    last name) labelled "Customer Name".
+  columns: ["Customer Number", "Customer Name"]
+  answer: |
+    SELECT DISTINCT r.customerid AS "Customer Number",
+           CONCAT(r.firstname, ' ', r.lastname) AS "Customer Name"
+    FROM customer c
+    JOIN customer r ON c.referredby = r.customerid;
+  hints:
+    - The referrer is also a row in the customer table. Join customer to itself with two aliases, one for the referred customer and one for the referrer.
+    - "SELECT DISTINCT r.customerid AS \"Customer Number\", CONCAT(____, ' ', ____) AS \"Customer Name\" FROM customer c JOIN customer r ON ____ = ____;"
+    - "... FROM customer c JOIN customer r ON c.referredby = r.customerid;  (now show r's number and name, once each)"
+  explain: >
+    In a self-join the same table plays two roles: c is the customer who was referred and r is
+    the customer who did the referring (c.referredby = r.customerid). Someone who referred two
+    people would appear twice, so DISTINCT keeps each referrer once.
+
+- id: hoa3
+  topic: subqueries
+  difficulty: 3
+  question: >
+    Which pizzas are priced higher than the average price of all pizzas? Show the pizza ID,
+    pizza name, supplier name and price, labelled "Pizza ID", "Pizza", "Supplier" and "Price".
+    Sort by price, highest first.
+  columns: ["Pizza ID", "Pizza", "Supplier", "Price"]
+  ordered: true
+  order_note: "Price, highest first"
+  answer: |
+    SELECT p.pizzaid AS "Pizza ID", p.pizzaname AS "Pizza", s.suppliername AS "Supplier",
+           p.price AS "Price"
+    FROM pizza p
+    JOIN supplier s ON p.supplierid = s.supplierid
+    WHERE p.price > (SELECT AVG(price) FROM pizza)
+    ORDER BY "Price" DESC;
+  hints:
+    - You can't write WHERE price > AVG(price) directly. Compute the average in a subquery, and JOIN supplier for the supplier name.
+    - "SELECT p.pizzaid AS \"Pizza ID\", ... FROM pizza p JOIN supplier s ON ____ WHERE p.price > (SELECT ____ FROM pizza) ORDER BY ____;"
+    - "... WHERE p.price > (SELECT AVG(price) FROM pizza) ORDER BY ____ DESC;"
+  explain: >
+    Aggregates like AVG can't be used directly in WHERE, so the subquery calculates the average
+    price first (about 15.61) and the outer query compares each pizza against it. The JOIN adds the
+    supplier name and ORDER BY ... DESC puts the most expensive first.
+
+- id: hoa4
+  topic: joins
+  difficulty: 3
+  question: >
+    Which pizzas has SOFIA BRANDT ordered? Show the pizza ID, pizza name and price, labelled
+    "Pizza ID", "Pizza" and "Price". List each pizza only once, even if she ordered it more than once.
+  columns: ["Pizza ID", "Pizza", "Price"]
+  answer: |
+    SELECT DISTINCT p.pizzaid AS "Pizza ID", p.pizzaname AS "Pizza", p.price AS "Price"
+    FROM customer c
+    JOIN orders o ON c.customerid = o.customerid
+    JOIN orderline ol ON o.orderid = ol.orderid
+    JOIN pizza p ON ol.pizzaid = p.pizzaid
+    WHERE c.firstname = 'SOFIA' AND c.lastname = 'BRANDT';
+  hints:
+    - Follow the chain customer -> orders -> orderline -> pizza, then filter on her name. One pizza appears in two of her orders, so remove duplicates.
+    - "SELECT DISTINCT p.pizzaid AS \"Pizza ID\", ... FROM customer c JOIN orders o ON ____ JOIN orderline ol ON ____ JOIN pizza p ON ____ WHERE ____;"
+    - "... JOIN pizza p ON ol.pizzaid = p.pizzaid WHERE c.firstname = 'SOFIA' AND c.lastname = ____;"
+  explain: >
+    A customer is linked to pizzas only through orders and orderline, so the query walks four tables,
+    each JOIN matching the shared ID column. Sofia ordered PEPPERONI in two separate orders, so
+    without DISTINCT it would show twice. Names are stored in CAPITALS.
+
+- id: hoa5
+  topic: joins
+  difficulty: 3
+  question: >
+    Who supplies the pizzas that have MUSHROOM as a topping? Show the pizza name, its category,
+    and the supplier's name, contact and phone, labelled "Pizza", "Category", "Supplier",
+    "Contact" and "Phone".
+  columns: ["Pizza", "Category", "Supplier", "Contact", "Phone"]
+  answer: |
+    SELECT p.pizzaname AS "Pizza", p.category AS "Category", s.suppliername AS "Supplier",
+           s.contact AS "Contact", s.phone AS "Phone"
+    FROM topping t
+    JOIN pizzatopping pt ON t.toppingid = pt.toppingid
+    JOIN pizza p ON pt.pizzaid = p.pizzaid
+    JOIN supplier s ON p.supplierid = s.supplierid
+    WHERE t.toppingname = 'MUSHROOM';
+  hints:
+    - Chain topping -> pizzatopping -> pizza -> supplier. pizzatopping is the link table that connects toppings and pizzas.
+    - "SELECT p.pizzaname AS \"Pizza\", ... FROM topping t JOIN pizzatopping pt ON ____ JOIN pizza p ON ____ JOIN supplier s ON ____ WHERE ____;"
+    - "... JOIN supplier s ON p.supplierid = s.supplierid WHERE t.toppingname = ____;"
+  explain: >
+    Pizzas and toppings are many-to-many, so they meet through pizzatopping (like book and author
+    meet through bookauthor). Starting from the MUSHROOM topping, each JOIN steps one table further
+    until you reach the supplier's contact details. The pizza called MUSHROOM MELT is only one of the
+    pizzas with that topping.
+
+- id: hoa6
+  topic: subqueries
+  difficulty: 4
+  question: >
+    Look at the pizzas made by the same supplier as the 'HAWAIIAN' pizza. Which of them make
+    more profit (price minus cost) than the average profit of all pizzas? Show the pizza ID,
+    pizza name and category, labelled "Pizza ID", "Pizza" and "Category".
+  columns: ["Pizza ID", "Pizza", "Category"]
+  answer: |
+    SELECT p.pizzaid AS "Pizza ID", p.pizzaname AS "Pizza", p.category AS "Category"
+    FROM pizza p
+    WHERE p.supplierid = (SELECT supplierid FROM pizza WHERE pizzaname = 'HAWAIIAN')
+      AND p.price - p.cost > (SELECT AVG(price - cost) FROM pizza);
+  hints:
+    - Two subqueries. One looks up the HAWAIIAN's supplierid; the other computes the average of (price - cost) over all pizzas.
+    - "SELECT pizzaid AS \"Pizza ID\", ... FROM pizza WHERE supplierid = (SELECT ____ FROM pizza WHERE ____) AND price - cost > (SELECT AVG(____) FROM pizza);"
+    - "... AND price - cost > (SELECT AVG(price - cost) FROM pizza);  (the first subquery: SELECT supplierid FROM pizza WHERE pizzaname = 'HAWAIIAN')"
+  explain: >
+    The first subquery is a lookup: it turns the name 'HAWAIIAN' into its supplierid, so you never
+    hard-code the number. AVG can average an expression, so AVG(price - cost) is the average profit
+    (about 9.81). The HAWAIIAN itself only makes 8.85, so it is not in the result.
+
+- id: hoa7
+  topic: subqueries
+  difficulty: 2
+  question: >
+    Which pizzas are more expensive (higher price) than the most expensive 'Vegetarian' pizza?
+    Show the pizza name and price, labelled "Pizza" and "Price".
+  columns: ["Pizza", "Price"]
+  answer: |
+    SELECT pizzaname AS "Pizza", price AS "Price"
+    FROM pizza
+    WHERE price > (SELECT MAX(price) FROM pizza WHERE category = 'Vegetarian');
+  hints:
+    - First find the highest Vegetarian price with a subquery, then compare every pizza against it.
+    - "SELECT pizzaname AS \"Pizza\", price AS \"Price\" FROM pizza WHERE price > (SELECT ____ FROM pizza WHERE ____);"
+    - "... WHERE price > (SELECT MAX(price) FROM pizza WHERE category = ____);"
+  explain: >
+    The subquery returns a single value, the top Vegetarian price (16.95). The outer WHERE keeps
+    every pizza whose price is bigger than that value. The filter on category belongs inside the
+    subquery, not in the outer query.
+
+- id: hoa8
+  topic: selfleft
+  difficulty: 3
+  question: >
+    Which pizzas have never been ordered? Show the pizza ID and pizza name, labelled
+    "Pizza ID" and "Pizza".
+  columns: ["Pizza ID", "Pizza"]
+  answer: |
+    SELECT p.pizzaid AS "Pizza ID", p.pizzaname AS "Pizza"
+    FROM pizza p
+    LEFT JOIN orderline ol ON p.pizzaid = ol.pizzaid
+    WHERE ol.pizzaid IS NULL;
+  hints:
+    - A LEFT JOIN keeps every pizza even when it has no matching order line; the unmatched ones have NULLs on the orderline side.
+    - "SELECT p.pizzaid AS \"Pizza ID\", p.pizzaname AS \"Pizza\" FROM pizza p LEFT JOIN orderline ol ON ____ WHERE ____ IS NULL;"
+    - "... LEFT JOIN orderline ol ON p.pizzaid = ol.pizzaid WHERE ol.____ IS NULL;"
+  explain: >
+    An inner JOIN only keeps pizzas that appear in orderline, which is the opposite of what we want.
+    LEFT JOIN keeps all pizzas and fills the orderline columns with NULL when there is no match, so
+    WHERE ol.pizzaid IS NULL leaves exactly the never-ordered pizzas.
+
+- id: hoa9
+  topic: subqueries
+  difficulty: 4
+  question: >
+    Find every order delivered to a state that any of LEO PARK's orders was delivered to (Leo's own
+    orders count too). Show the order number, delivery date and the full name of the customer who
+    placed the order (first name, a space, last name), labelled "Order Number", "Delivery Date" and
+    "Customer Name". Each order appears once; orders not delivered yet still appear (with an empty date).
+  columns: ["Order Number", "Delivery Date", "Customer Name"]
+  answer: |
+    SELECT o.orderid AS "Order Number", o.deliverydate AS "Delivery Date",
+           CONCAT(c.firstname, ' ', c.lastname) AS "Customer Name"
+    FROM orders o
+    JOIN customer c ON o.customerid = c.customerid
+    WHERE o.deliverystate IN (SELECT o2.deliverystate
+                              FROM orders o2
+                              JOIN customer c2 ON o2.customerid = c2.customerid
+                              WHERE c2.firstname = 'LEO' AND c2.lastname = 'PARK');
+  hints:
+    - Leo's orders went to more than one state, so the subquery returns several values. Use IN, not =. The subquery itself needs a join to find Leo by name.
+    - "SELECT o.orderid AS \"Order Number\", ... FROM orders o JOIN customer c ON ____ WHERE o.deliverystate IN (SELECT o2.deliverystate FROM orders o2 JOIN customer c2 ON ____ WHERE ____);"
+    - "... WHERE o.deliverystate IN (SELECT o2.deliverystate FROM orders o2 JOIN customer c2 ON o2.customerid = c2.customerid WHERE c2.firstname = 'LEO' AND c2.lastname = ____);"
+  explain: >
+    The subquery joins orders to customer to find the delivery states of Leo's orders (TX and CA).
+    Because it returns more than one row, the outer query uses IN. Use the delivery state on orders,
+    not the customer's home state: Leo lives in TX but one of his orders went to California.
+
+- id: hoa10
+  topic: joins
+  difficulty: 4
+  question: >
+    Which customers have ordered the cheapest pizza (lowest price)? Show each customer once with
+    their full name (first name, a space, last name) labelled "Customer Name" and their home state
+    labelled "State".
+  columns: ["Customer Name", "State"]
+  answer: |
+    SELECT DISTINCT CONCAT(c.firstname, ' ', c.lastname) AS "Customer Name", c.state AS "State"
+    FROM customer c
+    JOIN orders o ON c.customerid = o.customerid
+    JOIN orderline ol ON o.orderid = ol.orderid
+    JOIN pizza p ON ol.pizzaid = p.pizzaid
+    WHERE p.price = (SELECT MIN(price) FROM pizza);
+  hints:
+    - Chain customer -> orders -> orderline -> pizza and keep only the pizza whose price equals the minimum price (a subquery). One customer bought it twice.
+    - "SELECT DISTINCT CONCAT(____) AS \"Customer Name\", c.state AS \"State\" FROM customer c JOIN orders o ON ____ JOIN orderline ol ON ____ JOIN pizza p ON ____ WHERE p.price = (SELECT ____ FROM pizza);"
+    - "... JOIN pizza p ON ol.pizzaid = p.pizzaid WHERE p.price = (SELECT MIN(price) FROM pizza);"
+  explain: >
+    The MIN subquery finds the lowest price (9.75, NUTELLA DREAM) without hard-coding it. The four-table
+    chain connects each customer to the pizzas on their orders. LEO PARK ordered it in two different
+    orders, so DISTINCT is needed to list him once.
+
+# ------------------------------------------------------------------ select
+- id: veg_under_15
+  topic: select
+  difficulty: 2
+  question: >
+    List the 'Vegetarian' pizzas whose price is under 15.00. Show the pizza name and price,
+    labelled "Pizza" and "Price", cheapest first.
+  columns: ["Pizza", "Price"]
+  ordered: true
+  order_note: "Price, lowest first"
+  answer: |
+    SELECT pizzaname AS "Pizza", price AS "Price"
+    FROM pizza
+    WHERE category = 'Vegetarian' AND price < 15.00
+    ORDER BY price;
+  hints:
+    - Two conditions in WHERE joined with AND; categories are mixed case.
+    - "SELECT pizzaname AS \"Pizza\", price AS \"Price\" FROM pizza WHERE ____ AND ____ ORDER BY ____;"
+    - "... WHERE category = 'Vegetarian' AND price < 15.00 ORDER BY ____;"
+  explain: >
+    Both conditions must be true, so they are combined with AND. Text comparison is exact, so
+    'Vegetarian' must match the stored capitalisation. ORDER BY is ascending (lowest first) by default.
+
+- id: referred_south
+  topic: select
+  difficulty: 3
+  question: >
+    Which customers living in FL, TX or GA were referred by another customer? Show the customer
+    number, last name and first name, labelled "Customer Number", "Last Name" and "First Name",
+    sorted by last name A to Z.
+  columns: ["Customer Number", "Last Name", "First Name"]
+  ordered: true
+  order_note: "Last Name, A to Z"
+  answer: |
+    SELECT customerid AS "Customer Number", lastname AS "Last Name", firstname AS "First Name"
+    FROM customer
+    WHERE state IN ('FL', 'TX', 'GA') AND referredby IS NOT NULL
+    ORDER BY lastname;
+  hints:
+    - Use IN for the list of states, and remember that "has a referrer" means referredby is not empty (NULL).
+    - "SELECT customerid AS \"Customer Number\", ... FROM customer WHERE state IN (____) AND referredby ____ ORDER BY ____;"
+    - "... WHERE state IN ('FL', 'TX', 'GA') AND referredby IS NOT NULL ORDER BY ____;"
+  explain: >
+    IN ('FL', 'TX', 'GA') is a short way to write three OR conditions. You can't test NULL with = or <>;
+    you must use IS NULL / IS NOT NULL. Customers with no referrer have NULL in referredby.
+
+# ------------------------------------------------------------------ shape
+- id: profit_list
+  topic: shape
+  difficulty: 3
+  question: >
+    For every pizza in the 'Meaty' or 'Specialty' category, show the pizza name, cost, price and
+    profit (price minus cost), labelled "Pizza", "Cost", "Price" and "Profit". Most profitable first.
+  columns: ["Pizza", "Cost", "Price", "Profit"]
+  ordered: true
+  order_note: "Profit, highest first"
+  answer: |
+    SELECT pizzaname AS "Pizza", cost AS "Cost", price AS "Price", price - cost AS "Profit"
+    FROM pizza
+    WHERE category IN ('Meaty', 'Specialty')
+    ORDER BY "Profit" DESC;
+  hints:
+    - A column can be a calculation. Give it a label with AS, and sort by that label.
+    - "SELECT pizzaname AS \"Pizza\", cost AS \"Cost\", price AS \"Price\", ____ AS \"Profit\" FROM pizza WHERE category IN (____) ORDER BY ____;"
+    - "... price - cost AS \"Profit\" FROM pizza WHERE category IN ('Meaty', 'Specialty') ORDER BY \"Profit\" ____;"
+  explain: >
+    price - cost is computed for every row and labelled "Profit". ORDER BY can use that label
+    (in double quotes because it has a capital letter), and DESC puts the biggest profit first.
+
+- id: delivered_to
+  topic: shape
+  difficulty: 3
+  question: >
+    For every order placed between 2024-03-03 and 2024-03-05 (both days included), show the order
+    number labelled "Order Number", the order date labelled "Order Date", and where it was delivered
+    labelled "Delivered To", written as delivery city, a comma, a space and delivery state
+    (for example: MIAMI, FL). Sort by order number, smallest first.
+  columns: ["Order Number", "Order Date", "Delivered To"]
+  ordered: true
+  order_note: "Order Number, smallest first"
+  answer: |
+    SELECT orderid AS "Order Number", orderdate AS "Order Date",
+           CONCAT(deliverycity, ', ', deliverystate) AS "Delivered To"
+    FROM orders
+    WHERE orderdate BETWEEN '2024-03-03' AND '2024-03-05'
+    ORDER BY orderid;
+  hints:
+    - CONCAT glues text together, including literal pieces like ', '. BETWEEN includes both end dates.
+    - "SELECT orderid AS \"Order Number\", orderdate AS \"Order Date\", CONCAT(____, ', ', ____) AS \"Delivered To\" FROM orders WHERE orderdate BETWEEN ____ AND ____ ORDER BY ____;"
+    - "... CONCAT(deliverycity, ', ', deliverystate) AS \"Delivered To\" FROM orders WHERE orderdate BETWEEN '2024-03-03' AND '2024-03-05' ORDER BY ____;"
+  explain: >
+    CONCAT builds one text value from several pieces. The delivery city/state live on the orders table
+    (they can differ from the customer's home). Dates are written as 'YYYY-MM-DD' strings and
+    BETWEEN includes both ends.
+
+# ------------------------------------------------------------------ aggregates
+- id: veg_stats
+  topic: aggregates
+  difficulty: 2
+  question: >
+    Give a summary of the 'Vegetarian' pizzas in one row: how many there are, their average price
+    rounded to 2 decimals, the lowest price and the highest price, labelled "Pizzas",
+    "Average Price", "Lowest Price" and "Highest Price".
+  columns: ["Pizzas", "Average Price", "Lowest Price", "Highest Price"]
+  answer: |
+    SELECT COUNT(*) AS "Pizzas", ROUND(AVG(price), 2) AS "Average Price",
+           MIN(price) AS "Lowest Price", MAX(price) AS "Highest Price"
+    FROM pizza
+    WHERE category = 'Vegetarian';
+  hints:
+    - Aggregate functions (COUNT, AVG, MIN, MAX) squash all matching rows into one row. Filter with WHERE first.
+    - "SELECT COUNT(*) AS \"Pizzas\", ROUND(AVG(____), 2) AS \"Average Price\", ____ AS \"Lowest Price\", ____ AS \"Highest Price\" FROM pizza WHERE ____;"
+    - "... MIN(price) AS \"Lowest Price\", MAX(price) AS \"Highest Price\" FROM pizza WHERE category = ____;"
+  explain: >
+    WHERE keeps only the Vegetarian rows, then each aggregate summarises them into a single value.
+    ROUND(AVG(price), 2) trims the average to 2 decimals (14.525 becomes 14.53).
+
+- id: waiting_pizzas
+  topic: aggregates
+  difficulty: 3
+  question: >
+    Some orders have not been delivered yet (no delivery date). How many such orders are there, and
+    how many pizzas in total (sum of quantities) are on them? Labels: "Undelivered Orders" and
+    "Pizzas Waiting".
+  columns: ["Undelivered Orders", "Pizzas Waiting"]
+  answer: |
+    SELECT COUNT(DISTINCT o.orderid) AS "Undelivered Orders", SUM(ol.quantity) AS "Pizzas Waiting"
+    FROM orders o
+    JOIN orderline ol ON o.orderid = ol.orderid
+    WHERE o.deliverydate IS NULL;
+  hints:
+    - Join orders to orderline to see quantities, keep only rows where deliverydate IS NULL, then aggregate. An order with two lines must still count as one order.
+    - "SELECT COUNT(DISTINCT ____) AS \"Undelivered Orders\", SUM(____) AS \"Pizzas Waiting\" FROM orders o JOIN orderline ol ON ____ WHERE ____;"
+    - "... FROM orders o JOIN orderline ol ON o.orderid = ol.orderid WHERE o.deliverydate IS NULL;"
+  explain: >
+    After the join there is one row per order line, so COUNT(*) would count lines, not orders.
+    COUNT(DISTINCT o.orderid) counts each order once, while SUM(ol.quantity) adds up the pizzas on
+    every line.
+
+# ------------------------------------------------------------------ subqueries
+- id: same_state_rita
+  topic: subqueries
+  difficulty: 3
+  question: >
+    Which other customers live in the same state as RITA ADAMS? Show their full name (first name,
+    a space, last name) labelled "Customer Name" and their city labelled "City". Do not include Rita herself.
+  columns: ["Customer Name", "City"]
+  answer: |
+    SELECT CONCAT(firstname, ' ', lastname) AS "Customer Name", city AS "City"
+    FROM customer
+    WHERE state = (SELECT state FROM customer WHERE firstname = 'RITA' AND lastname = 'ADAMS')
+      AND NOT (firstname = 'RITA' AND lastname = 'ADAMS');
+  hints:
+    - A lookup subquery finds Rita's state; then exclude Rita from the result.
+    - "SELECT CONCAT(firstname, ' ', lastname) AS \"Customer Name\", city AS \"City\" FROM customer WHERE state = (SELECT ____ FROM customer WHERE ____) AND ____;"
+    - "... WHERE state = (SELECT state FROM customer WHERE firstname = 'RITA' AND lastname = 'ADAMS') AND NOT (____);"
+  explain: >
+    The subquery returns Rita's state (FL) so you don't have to know it in advance. Rita lives in
+    FL too, so she would match her own state; the extra condition removes her.
+
+- id: cheaper_than_prime
+  topic: subqueries
+  difficulty: 4
+  question: >
+    Which pizzas are cheaper (lower price) than every pizza supplied by PRIME MEATS CO? Show the pizza
+    name, its price and its own supplier's name, labelled "Pizza", "Price" and "Supplier". Cheapest first.
+  columns: ["Pizza", "Price", "Supplier"]
+  ordered: true
+  order_note: "Price, lowest first"
+  answer: |
+    SELECT p.pizzaname AS "Pizza", p.price AS "Price", s.suppliername AS "Supplier"
+    FROM pizza p
+    JOIN supplier s ON p.supplierid = s.supplierid
+    WHERE p.price < (SELECT MIN(p2.price)
+                     FROM pizza p2
+                     JOIN supplier s2 ON p2.supplierid = s2.supplierid
+                     WHERE s2.suppliername = 'PRIME MEATS CO')
+    ORDER BY "Price";
+  hints:
+    - Cheaper than every one of them = cheaper than the cheapest one. The subquery needs a join to find PRIME MEATS CO by name.
+    - "SELECT p.pizzaname AS \"Pizza\", ... FROM pizza p JOIN supplier s ON ____ WHERE p.price < (SELECT MIN(p2.price) FROM pizza p2 JOIN supplier s2 ON ____ WHERE ____) ORDER BY ____;"
+    - "... WHERE p.price < (SELECT MIN(p2.price) FROM pizza p2 JOIN supplier s2 ON p2.supplierid = s2.supplierid WHERE s2.suppliername = 'PRIME MEATS CO') ORDER BY ____;"
+  explain: >
+    "Cheaper than all of them" means below their minimum, so the subquery uses MIN. The subquery
+    joins pizza and supplier to filter by supplier name; the outer query also joins supplier, but
+    to show each result pizza's own supplier.
+
+- id: same_category_buffalo
+  topic: subqueries
+  difficulty: 4
+  question: >
+    Which orders contain at least one pizza from the same category as 'BUFFALO BLAZE'? Show each
+    order once with its order number and order date, labelled "Order Number" and "Order Date",
+    sorted by order number.
+  columns: ["Order Number", "Order Date"]
+  ordered: true
+  order_note: "Order Number, smallest first"
+  answer: |
+    SELECT DISTINCT o.orderid AS "Order Number", o.orderdate AS "Order Date"
+    FROM orders o
+    JOIN orderline ol ON o.orderid = ol.orderid
+    JOIN pizza p ON ol.pizzaid = p.pizzaid
+    WHERE p.category = (SELECT category FROM pizza WHERE pizzaname = 'BUFFALO BLAZE')
+    ORDER BY "Order Number";
+  hints:
+    - Look up BUFFALO BLAZE's category with a subquery, then join orders -> orderline -> pizza and keep matching pizzas. Some orders contain two such pizzas.
+    - "SELECT DISTINCT o.orderid AS \"Order Number\", o.orderdate AS \"Order Date\" FROM orders o JOIN orderline ol ON ____ JOIN pizza p ON ____ WHERE p.category = (SELECT ____ FROM pizza WHERE ____) ORDER BY ____;"
+    - "... WHERE p.category = (SELECT category FROM pizza WHERE pizzaname = 'BUFFALO BLAZE') ORDER BY ____;"
+  explain: >
+    The lookup subquery returns 'Specialty'. Joining down to pizza gives one row per order line,
+    so an order with two Specialty pizzas would appear twice; DISTINCT keeps it once.
+
+- id: referred_truffle
+  topic: subqueries
+  difficulty: 5
+  question: >
+    Which customers referred at least one customer who has ordered the 'TRUFFLE ROYALE' pizza? Show the
+    referrer's customer number labelled "Customer Number" and full name (first name, a space, last name)
+    labelled "Customer Name", each referrer once.
+  columns: ["Customer Number", "Customer Name"]
+  answer: |
+    SELECT customerid AS "Customer Number", CONCAT(firstname, ' ', lastname) AS "Customer Name"
+    FROM customer
+    WHERE customerid IN (
+        SELECT referredby FROM customer
+        WHERE customerid IN (
+            SELECT o.customerid
+            FROM orders o
+            JOIN orderline ol ON o.orderid = ol.orderid
+            WHERE ol.pizzaid = (SELECT pizzaid FROM pizza WHERE pizzaname = 'TRUFFLE ROYALE')));
+  hints:
+    - Work inside out. Innermost - who ordered TRUFFLE ROYALE? Next - who referred those buyers (their referredby)? Outer - show those referrers.
+    - "SELECT customerid AS \"Customer Number\", ... FROM customer WHERE customerid IN (SELECT referredby FROM customer WHERE customerid IN (SELECT o.customerid FROM orders o JOIN orderline ol ON ____ WHERE ____));"
+    - "... WHERE customerid IN (SELECT o.customerid FROM orders o JOIN orderline ol ON o.orderid = ol.orderid WHERE ol.pizzaid = (SELECT pizzaid FROM pizza WHERE pizzaname = ____))"
+  explain: >
+    Each nested subquery answers one smaller question: the innermost lists TRUFFLE ROYALE buyers, the
+    middle one turns them into the IDs of whoever referred them, and the outer query prints those
+    referrers. RITA ADAMS bought a TRUFFLE ROYALE herself, but she appears because she referred MARCUS
+    CHEN, who also bought one.
+
+# ------------------------------------------------------------------ joins
+- id: order_5007_lines
+  topic: joins
+  difficulty: 3
+  question: >
+    Show the lines of order 5007: pizza name, quantity, price and line total (quantity times price),
+    labelled "Pizza", "Quantity", "Price" and "Line Total". Biggest line total first.
+  columns: ["Pizza", "Quantity", "Price", "Line Total"]
+  ordered: true
+  order_note: "Line Total, highest first"
+  answer: |
+    SELECT p.pizzaname AS "Pizza", ol.quantity AS "Quantity", p.price AS "Price",
+           ol.quantity * p.price AS "Line Total"
+    FROM orderline ol
+    JOIN pizza p ON ol.pizzaid = p.pizzaid
+    WHERE ol.orderid = 5007
+    ORDER BY "Line Total" DESC;
+  hints:
+    - Quantity is on orderline, price is on pizza. JOIN them on pizzaid and multiply.
+    - "SELECT p.pizzaname AS \"Pizza\", ol.quantity AS \"Quantity\", p.price AS \"Price\", ____ AS \"Line Total\" FROM orderline ol JOIN pizza p ON ____ WHERE ____ ORDER BY ____;"
+    - "... ol.quantity * p.price AS \"Line Total\" FROM orderline ol JOIN pizza p ON ol.pizzaid = p.pizzaid WHERE ol.orderid = 5007 ORDER BY ____;"
+  explain: >
+    Each order line only stores the pizzaid and quantity; joining pizza brings in the name and price
+    so you can compute quantity * price per line. Sorting by the label "Line Total" with DESC puts
+    the biggest first.
+
+- id: green_basket_customers
+  topic: joins
+  difficulty: 4
+  question: >
+    Which customers have ordered a pizza supplied by GREEN BASKET? Show each customer once with their
+    full name (first name, a space, last name) labelled "Customer Name" and their home city labelled
+    "City", sorted by customer name A to Z.
+  columns: ["Customer Name", "City"]
+  ordered: true
+  order_note: "Customer Name, A to Z"
+  answer: |
+    SELECT DISTINCT CONCAT(c.firstname, ' ', c.lastname) AS "Customer Name", c.city AS "City"
+    FROM customer c
+    JOIN orders o ON c.customerid = o.customerid
+    JOIN orderline ol ON o.orderid = ol.orderid
+    JOIN pizza p ON ol.pizzaid = p.pizzaid
+    JOIN supplier s ON p.supplierid = s.supplierid
+    WHERE s.suppliername = 'GREEN BASKET'
+    ORDER BY "Customer Name";
+  hints:
+    - Five tables in a chain - customer -> orders -> orderline -> pizza -> supplier. Filter on the supplier's name.
+    - "SELECT DISTINCT CONCAT(c.firstname, ' ', c.lastname) AS \"Customer Name\", c.city AS \"City\" FROM customer c JOIN orders o ON ____ JOIN orderline ol ON ____ JOIN pizza p ON ____ JOIN supplier s ON ____ WHERE ____ ORDER BY ____;"
+    - "... JOIN supplier s ON p.supplierid = s.supplierid WHERE s.suppliername = 'GREEN BASKET' ORDER BY \"Customer Name\";"
+  explain: >
+    Every JOIN adds one more table along the chain, each linked by the ID the two tables share. The
+    full name starts with the first name, so sorting by "Customer Name" sorts by first name. DISTINCT
+    guards against a customer showing up once per matching line.
+
+- id: out_of_state
+  topic: joins
+  difficulty: 4
+  question: >
+    Which orders were delivered to a different state from the state the customer lives in? Show the
+    order number, the customer's full name (first name, a space, last name), the customer's home state
+    and the delivery state, labelled "Order Number", "Customer Name", "Home State" and "Delivery State".
+    Sort by order number.
+  columns: ["Order Number", "Customer Name", "Home State", "Delivery State"]
+  ordered: true
+  order_note: "Order Number, smallest first"
+  answer: |
+    SELECT o.orderid AS "Order Number", CONCAT(c.firstname, ' ', c.lastname) AS "Customer Name",
+           c.state AS "Home State", o.deliverystate AS "Delivery State"
+    FROM orders o
+    JOIN customer c ON o.customerid = c.customerid
+    WHERE o.deliverystate <> c.state
+    ORDER BY "Order Number";
+  hints:
+    - After joining orders to customer, each row has both states side by side. Compare the two columns with <>.
+    - "SELECT o.orderid AS \"Order Number\", ... FROM orders o JOIN customer c ON ____ WHERE ____ <> ____ ORDER BY ____;"
+    - "... JOIN customer c ON o.customerid = c.customerid WHERE o.deliverystate <> c.state ORDER BY ____;"
+  explain: >
+    WHERE can compare two columns, not just a column and a fixed value. Once the JOIN lines up each order
+    with its customer, o.deliverystate <> c.state keeps the orders sent away from home.
+
+- id: rita_referrals_pizzas
+  topic: joins
+  difficulty: 5
+  question: >
+    What did the customers referred by RITA ADAMS order? For each such customer and pizza, show the
+    customer's full name (first name, a space, last name), the pizza name and the pizza's supplier name,
+    labelled "Customer Name", "Pizza" and "Supplier". Each customer/pizza pair appears once. Sort by
+    customer name, then pizza name, both A to Z.
+  columns: ["Customer Name", "Pizza", "Supplier"]
+  ordered: true
+  order_note: "Customer Name A to Z, then Pizza A to Z"
+  answer: |
+    SELECT DISTINCT CONCAT(c.firstname, ' ', c.lastname) AS "Customer Name", p.pizzaname AS "Pizza",
+           s.suppliername AS "Supplier"
+    FROM customer r
+    JOIN customer c ON c.referredby = r.customerid
+    JOIN orders o ON c.customerid = o.customerid
+    JOIN orderline ol ON o.orderid = ol.orderid
+    JOIN pizza p ON ol.pizzaid = p.pizzaid
+    JOIN supplier s ON p.supplierid = s.supplierid
+    WHERE r.firstname = 'RITA' AND r.lastname = 'ADAMS'
+    ORDER BY "Customer Name", "Pizza";
+  hints:
+    - Start with a self-join (r = Rita, c = the customers she referred), then follow c's orders down to pizza and supplier.
+    - "SELECT DISTINCT CONCAT(c.firstname, ' ', c.lastname) AS \"Customer Name\", ... FROM customer r JOIN customer c ON ____ JOIN orders o ON ____ JOIN orderline ol ON ____ JOIN pizza p ON ____ JOIN supplier s ON ____ WHERE ____ ORDER BY ____;"
+    - "... FROM customer r JOIN customer c ON c.referredby = r.customerid ... WHERE r.firstname = 'RITA' AND r.lastname = 'ADAMS' ORDER BY \"Customer Name\", \"Pizza\";"
+  explain: >
+    The self-join finds the people Rita referred (their referredby is Rita's id). From there it is the
+    usual chain orders -> orderline -> pizza -> supplier. Be careful to show c's name (the referred
+    customer), not r's.
+
+# ------------------------------------------------------------------ selfleft
+- id: unused_toppings
+  topic: selfleft
+  difficulty: 3
+  question: >
+    Which toppings are not used on any pizza? Show the topping name and its type, labelled
+    "Topping" and "Type".
+  columns: ["Topping", "Type"]
+  answer: |
+    SELECT t.toppingname AS "Topping", t.toppingtype AS "Type"
+    FROM topping t
+    LEFT JOIN pizzatopping pt ON t.toppingid = pt.toppingid
+    WHERE pt.toppingid IS NULL;
+  hints:
+    - LEFT JOIN from topping to the link table pizzatopping keeps every topping; unused ones get NULLs.
+    - "SELECT t.toppingname AS \"Topping\", t.toppingtype AS \"Type\" FROM topping t LEFT JOIN pizzatopping pt ON ____ WHERE ____ IS NULL;"
+    - "... LEFT JOIN pizzatopping pt ON t.toppingid = pt.toppingid WHERE pt.____ IS NULL;"
+  explain: >
+    A topping is "used" when it appears in pizzatopping. The LEFT JOIN keeps toppings with no match and
+    gives them NULL in the pizzatopping columns, and IS NULL picks out exactly those.
+
+- id: referred_never_ordered
+  topic: selfleft
+  difficulty: 4
+  question: >
+    Which customers have never placed an order but were referred by someone? Show the customer's
+    full name (first name, a space, last name) labelled "Customer Name" and the full name of the
+    customer who referred them labelled "Referred By".
+  columns: ["Customer Name", "Referred By"]
+  answer: |
+    SELECT CONCAT(c.firstname, ' ', c.lastname) AS "Customer Name",
+           CONCAT(r.firstname, ' ', r.lastname) AS "Referred By"
+    FROM customer c
+    JOIN customer r ON c.referredby = r.customerid
+    LEFT JOIN orders o ON c.customerid = o.customerid
+    WHERE o.orderid IS NULL;
+  hints:
+    - Combine a self-join (customer to their referrer) with a LEFT JOIN to orders that keeps customers with no orders.
+    - "SELECT CONCAT(c.firstname, ' ', c.lastname) AS \"Customer Name\", CONCAT(____) AS \"Referred By\" FROM customer c JOIN customer r ON ____ LEFT JOIN orders o ON ____ WHERE ____ IS NULL;"
+    - "... JOIN customer r ON c.referredby = r.customerid LEFT JOIN orders o ON c.customerid = o.customerid WHERE o.orderid IS NULL;"
+  explain: >
+    The inner self-join drops customers with no referrer and pairs the rest with their referrer.
+    The LEFT JOIN to orders keeps customers with no orders (NULL order columns), and IS NULL keeps
+    only them. Watch which alias you print: c is the customer, r the referrer.
+
+- id: quiet_since_0306
+  topic: selfleft
+  difficulty: 5
+  question: >
+    Which customers have not placed any order on or after 2024-03-06? This includes customers who
+    have never ordered at all. Show the customer number labelled "Customer Number" and full name
+    (first name, a space, last name) labelled "Customer Name", sorted by customer number.
+  columns: ["Customer Number", "Customer Name"]
+  ordered: true
+  order_note: "Customer Number, smallest first"
+  answer: |
+    SELECT c.customerid AS "Customer Number", CONCAT(c.firstname, ' ', c.lastname) AS "Customer Name"
+    FROM customer c
+    LEFT JOIN orders o ON c.customerid = o.customerid AND o.orderdate >= '2024-03-06'
+    WHERE o.orderid IS NULL
+    ORDER BY c.customerid;
+  hints:
+    - LEFT JOIN to only the recent orders, then keep customers with no match. The date condition must go in the ON clause, not the WHERE.
+    - "SELECT c.customerid AS \"Customer Number\", ... FROM customer c LEFT JOIN orders o ON c.customerid = o.customerid AND ____ WHERE ____ IS NULL ORDER BY ____;"
+    - "... LEFT JOIN orders o ON c.customerid = o.customerid AND o.orderdate >= '2024-03-06' WHERE o.orderid IS NULL ORDER BY ____;"
+  explain: >
+    Putting the date test inside ON means the LEFT JOIN only looks for recent orders; customers with
+    none get NULLs and survive WHERE o.orderid IS NULL. If you put the date test in WHERE instead, the
+    NULL rows fail it and you get nothing. Old orders don't count, so customers who only ordered early
+    are included.
+
+# ------------------------------------------------------------------ groupby
+- id: category_summary
+  topic: groupby
+  difficulty: 3
+  question: >
+    For each pizza category, show the category, how many pizzas it has, and their average price
+    rounded to 2 decimals, labelled "Category", "Pizzas" and "Average Price". One row per category,
+    sorted by category A to Z.
+  columns: ["Category", "Pizzas", "Average Price"]
+  ordered: true
+  order_note: "Category, A to Z"
+  answer: |
+    SELECT category AS "Category", COUNT(*) AS "Pizzas", ROUND(AVG(price), 2) AS "Average Price"
+    FROM pizza
+    GROUP BY category
+    ORDER BY category;
+  hints:
+    - GROUP BY category splits the pizzas into one bucket per category; COUNT and AVG are then computed per bucket instead of over the whole table.
+    - "SELECT category AS \"Category\", COUNT(*) AS \"Pizzas\", ROUND(AVG(____), 2) AS \"Average Price\" FROM pizza GROUP BY ____ ORDER BY ____;"
+    - "... FROM pizza GROUP BY category ORDER BY category;"
+  explain: >
+    Without GROUP BY, COUNT(*) and AVG summarise the whole table into one row. GROUP BY category
+    makes one group per category and the aggregates run once per group. Rule - every column in
+    SELECT that is not inside an aggregate must be listed in GROUP BY.
+
+- id: busy_suppliers
+  topic: groupby
+  difficulty: 4
+  question: >
+    Which suppliers have sold a total of 10 or more pizzas (sum of quantities over all order lines of
+    their pizzas)? Show the supplier name and the total, labelled "Supplier" and "Pizzas Sold".
+    Sort by pizzas sold, highest first, then supplier name A to Z.
+  columns: ["Supplier", "Pizzas Sold"]
+  ordered: true
+  order_note: "Pizzas Sold highest first, then Supplier A to Z"
+  answer: |
+    SELECT s.suppliername AS "Supplier", SUM(ol.quantity) AS "Pizzas Sold"
+    FROM supplier s
+    JOIN pizza p ON s.supplierid = p.supplierid
+    JOIN orderline ol ON p.pizzaid = ol.pizzaid
+    GROUP BY s.suppliername
+    HAVING SUM(ol.quantity) >= 10
+    ORDER BY "Pizzas Sold" DESC, "Supplier";
+  hints:
+    - Join supplier -> pizza -> orderline, GROUP BY the supplier, and SUM the quantities. A condition on a group total goes in HAVING, not WHERE.
+    - "SELECT s.suppliername AS \"Supplier\", SUM(____) AS \"Pizzas Sold\" FROM supplier s JOIN pizza p ON ____ JOIN orderline ol ON ____ GROUP BY ____ HAVING ____ ORDER BY ____;"
+    - "... GROUP BY s.suppliername HAVING SUM(ol.quantity) >= 10 ORDER BY \"Pizzas Sold\" DESC, \"Supplier\";"
+  explain: >
+    WHERE filters individual rows before grouping; HAVING filters whole groups after the aggregates are
+    computed, so a test on SUM(...) must be in HAVING. Two suppliers tie on 11, which is why the sort
+    needs the supplier name as a tie-breaker.
+
+- id: big_spenders
+  topic: groupby
+  difficulty: 5
+  question: >
+    Which customers have spent more than 50.00 in total (sum of quantity times price over all their
+    order lines)? Show their full name (first name, a space, last name), the number of different orders
+    they placed, and the total spent, labelled "Customer Name", "Orders" and "Total Spent".
+    Sort by total spent, highest first.
+  columns: ["Customer Name", "Orders", "Total Spent"]
+  ordered: true
+  order_note: "Total Spent, highest first"
+  answer: |
+    SELECT CONCAT(c.firstname, ' ', c.lastname) AS "Customer Name",
+           COUNT(DISTINCT o.orderid) AS "Orders",
+           SUM(ol.quantity * p.price) AS "Total Spent"
+    FROM customer c
+    JOIN orders o ON c.customerid = o.customerid
+    JOIN orderline ol ON o.orderid = ol.orderid
+    JOIN pizza p ON ol.pizzaid = p.pizzaid
+    GROUP BY c.customerid, c.firstname, c.lastname
+    HAVING SUM(ol.quantity * p.price) > 50
+    ORDER BY "Total Spent" DESC;
+  hints:
+    - Join customer -> orders -> orderline -> pizza, GROUP BY the customer, and use SUM(quantity * price). Count orders with COUNT(DISTINCT ...) because an order can have several lines. Filter the totals with HAVING.
+    - "SELECT CONCAT(c.firstname, ' ', c.lastname) AS \"Customer Name\", COUNT(DISTINCT ____) AS \"Orders\", SUM(____) AS \"Total Spent\" FROM customer c JOIN orders o ON ____ JOIN orderline ol ON ____ JOIN pizza p ON ____ GROUP BY ____ HAVING ____ ORDER BY ____;"
+    - "... GROUP BY c.customerid, c.firstname, c.lastname HAVING SUM(ol.quantity * p.price) > 50 ORDER BY \"Total Spent\" DESC;"
+  explain: >
+    After the joins there is one row per order line, so SUM(ol.quantity * p.price) per customer gives
+    their total spend, and COUNT(DISTINCT o.orderid) counts orders rather than lines. Grouping by
+    customerid keeps two different people with the same name apart, and HAVING keeps only groups whose
+    total is above 50.
