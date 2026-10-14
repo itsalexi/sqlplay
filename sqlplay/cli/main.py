@@ -23,6 +23,8 @@ from sqlplay.engine.pg import PgError, default_cluster, home_dir
 
 console = Console(highlight=False)
 
+ACC, BLUE, AMBER, RED, DIM = "#8be9b0", "#8ec5ff", "#f5c86b", "#ff7a7a", "grey50"
+
 HELP = r"""
 [bold]Playing[/]
   (type SQL, end with ;)   run it and grade it against the current question
@@ -69,6 +71,14 @@ def wrap(s: str, indent: int = 2) -> str:
                          initial_indent=" " * indent, subsequent_indent=" " * indent)
 
 
+def ai_line(text: str, indent: int = 2) -> None:
+    """Print an AI message with a blue 'ai ›' tag and a hanging indent."""
+    tag = " " * indent + "ai › "
+    body = textwrap.fill(" ".join(text.split()), width=min(console.width, 100),
+                         initial_indent=tag, subsequent_indent=" " * len(tag))
+    console.print(f"[{BLUE}]{tag}[/]" + Text(body[len(tag):]).markup)
+
+
 class Shell:
     def __init__(self, game):
         self.g = game
@@ -84,35 +94,33 @@ class Shell:
     def banner(self) -> None:
         st = self.g.status()
         w = st["world"]
-        lv_bits = " · ".join(
-            f"{t['topic'][:4].upper()} {t['difficulty']}" for t in st["topics"] if t["unlocked"]
+        mode = st["locked"] or "mix"
+        ai_txt = "ai on" if (st["ai"] and self.ai_on) else ("ai off" if st["ai"] else "no ai key")
+        console.print()
+        console.print(
+            f"[bold]psqlay[/][{ACC}]▍[/]  [{DIM}]·[/]  {w['emoji']} {w['name']}  [{DIM}]·  {mode}  ·  "
+            f"score[/] {st['score']}  [{DIM}]·  streak[/] {st['streak']}  [{DIM}]·  {ai_txt}[/]"
         )
-        mode = f"Topic: {TOPICS[st['locked']]}" if st["locked"] else "Mode: Mix"
-        ai_txt = "[green]AI on[/]" if (st["ai"] and self.ai_on) else ("[dim]AI off[/]" if st["ai"] else "[dim]no AI key[/]")
-        body = (
-            f"World: {w['emoji']} [bold]{w['name']}[/]    {mode}    {ai_txt}\n"
-            f"Score: [bold]{st['score']}[/]   Streak: 🔥 {st['streak']}   Levels: {lv_bits}"
-        )
-        console.print(Panel(body, title="[bold]psqlay[/]", title_align="left", border_style="cyan"))
+        console.print(f"[{DIM}]" + "─" * min(console.width, 100) + "[/]")
 
     def show_level(self) -> None:
         lv = self.g.current()
         if self.g.needs_groupby_intro():
-            console.print(Panel(self.g.groupby_intro(), title="🆕 New topic unlocked: GROUP BY / HAVING",
-                                border_style="magenta"))
-        src = {"builtin": "", "generated": " · generated", "ai": " · 🤖 AI"}.get(lv.source, "")
+            console.print(Panel(self.g.groupby_intro(), title="new topic: group by / having",
+                                border_style=DIM, title_align="left"))
+        src = {"generated": " · generated", "ai": " · ai"}.get(lv.source, "")
+        dots = f"[{ACC}]" + "●" * lv.difficulty + f"[/][{DIM}]" + "○" * (5 - lv.difficulty) + "[/]"
         console.print()
-        console.print(
-            f"[bold cyan]Level {lv.difficulty}[/] · {TOPICS.get(lv.topic, lv.topic)}{src}"
-            f"[dim]{' ' * 4}{lv.points} pts[/]"
-        )
+        console.print(f"  {dots}  [{DIM}]level {lv.difficulty} · {TOPICS.get(lv.topic, lv.topic).lower()} · "
+                      f"{lv.points} pts{src}[/]")
         console.print()
-        console.print(wrap(lv.question))
-        if lv.columns:
+        console.print(f"[bold]{wrap(lv.question)}[/]")
+        if lv.columns or (lv.ordered and lv.order_note):
             console.print()
-            console.print("  [bold]Columns:[/] " + ", ".join(f'"{c}"' for c in lv.columns))
+        if lv.columns:
+            console.print(f"  [{DIM}]columns[/]  " + ", ".join(f'"{c}"' for c in lv.columns))
         if lv.ordered and lv.order_note:
-            console.print(f"  [bold]Sort:[/]    {lv.order_note}")
+            console.print(f"  [{DIM}]sort   [/]  {lv.order_note}")
         console.print()
 
     def print_result(self, res) -> None:
@@ -128,7 +136,7 @@ class Shell:
         """Read lines until ';' (SQL) or a single backslash command line."""
         lines: list[str] = []
         while True:
-            p = prompt if not lines else " " * (len(prompt) - 5) + "...> "
+            p = prompt if not lines else prompt.replace("=#", "-#")
             try:
                 line = self.session.prompt(p)
             except KeyboardInterrupt:
@@ -152,20 +160,20 @@ class Shell:
     # ---------------------------------------------------------------- loop
     def run(self) -> None:
         self.banner()
-        console.print("[dim]Type \\help for commands. Write SQL and end it with ; to answer.[/]")
+        console.print(f"[{DIM}]write sql ending in ;  ·  \\hint  \\skip  \\answer  \\exam  \\help[/]")
         self.show_level()
         while True:
             if self.g.exam:
                 ex = self.g.exam
                 rem = ex.remaining
                 timer = f" [{rem // 60:02d}:{rem % 60:02d}]" if rem is not None else ""
-                prompt = f"exam {self.exam_i + 1}/{len(ex.levels)}{timer}> "
+                prompt = f"q{self.exam_i + 1}/{len(ex.levels)}{timer} {ex.world}=# "
                 if rem == 0:
                     console.print("[bold yellow]⏰ Time's up! Submitting your exam...[/]")
                     self.exam_submit()
                     continue
             else:
-                prompt = "psqlay> "
+                prompt = f"{self.g.world}=# "
             stmt = self.read_statement(prompt)
             if stmt is None:
                 break
@@ -181,7 +189,7 @@ class Shell:
                     self.answer(stmt)
             except (ai.AIError, ValueError, RuntimeError) as e:
                 console.print(f"[red]{e}[/]")
-        console.print("Bye! Progress saved. 👋")
+        console.print(f"[{DIM}]bye · progress saved[/]")
 
     # ---------------------------------------------------------------- practice
     def answer(self, sql: str) -> None:
@@ -195,41 +203,41 @@ class Shell:
         if v.passed:
             if out["first_pass"]:
                 o = out["outcome"]
-                msg = f"[bold green]✓ PASS![/] +{o.points} pts   Score {o.score}   Streak 🔥 {o.streak}"
+                msg = f"[{ACC}]✓ correct[/]  [{DIM}]+{o.points} pts · score {o.score} · streak {o.streak}[/]"
                 if o.difficulty_after > o.difficulty_before:
-                    msg += f"   [bold magenta]⬆ {TOPICS[self.g.current().topic]} → Level {o.difficulty_after}[/]"
+                    msg += f"  [{ACC}]↑ {TOPICS[self.g.current().topic].lower()} level {o.difficulty_after}[/]"
                 console.print(msg)
                 if o.unlocked:
-                    console.print(f"[bold magenta]🆕 Unlocked: {TOPICS[o.unlocked]}[/]")
+                    console.print(f"[{ACC}]unlocked: {TOPICS[o.unlocked].lower()}[/]")
             else:
-                console.print("[bold green]✓ Still correct![/]")
+                console.print(f"[{ACC}]✓ still correct[/]")
             if self.ai_on:
-                with console.status("[dim]🤖 tip...[/]", spinner="dots"):
+                with console.status(f"[{DIM}]ai[/]", spinner="dots"):
                     tip = self.g.pass_tip(sql)
                 if tip:
-                    console.print(f"[cyan]🤖 {tip}[/]")
-            console.print("[dim]Press Enter... (or keep exploring; \\skip for the next level)[/]")
+                    ai_line(tip)
+            console.print(f"[{DIM}]↵ next level[/]")
             try:
                 self.session.prompt("")
             except (KeyboardInterrupt, EOFError):
                 pass
             self.next()
             return
-        console.print(f"[bold red]✗ {v.message}[/]")
+        console.print(f"[{RED}]✗ {v.message}[/]")
         if v.tip:
-            console.print(wrap(v.tip))
+            console.print(f"[{DIM}]{wrap(v.tip)}[/]")
         if self.ai_on:
             try:
-                with console.status("[dim]🤖 thinking... (Ctrl-C to skip)[/]", spinner="dots"):
+                with console.status(f"[{DIM}]ai thinking · ctrl-c to skip[/]", spinner="dots"):
                     nudge = self.g.tutor(sql, v)
             except KeyboardInterrupt:
                 nudge = ""
             if nudge:
-                console.print(Text("🤖 ", style="cyan") + Text(nudge, style="cyan"))
+                ai_line(nudge)
 
     def next(self, topic: str | None = None) -> None:
         if self.g.ai_available() and self.ai_on:
-            with console.status("[dim]Picking your next level...[/]", spinner="dots"):
+            with console.status(f"[{DIM}]preparing next level[/]", spinner="dots"):
                 self.g.next_level(topic)
         else:
             self.g.next_level(topic)
@@ -248,19 +256,20 @@ class Shell:
         elif cmd == "\\hint":
             h = self.g.hint()
             if h is None:
-                console.print("[yellow]No more hints. \\answer shows the solution.[/]")
+                console.print(f"[{DIM}]no more hints · \\answer shows the solution[/]")
             else:
                 n, text = h
-                console.print(f"[yellow]💡 Hint {n}/{len(self.g.current().hints)} (−2 pts):[/] {text}")
+                console.print(f"[{AMBER}]hint {n}/{len(self.g.current().hints)}[/]  {text}  [{DIM}]−2 pts[/]")
         elif cmd in ("\\skip", "\\next", "\\n"):
             self.next()
         elif cmd in ("\\answer", "\\giveup"):
             a = self.g.give_up()
-            console.print(Panel(a["answer"], title="Answer", border_style="yellow"))
-            console.print(wrap(a["explain"]))
+            console.print(f"[{AMBER}]→ answer[/]")
+            console.print(Panel(a["answer"], border_style=DIM, padding=(0, 1)))
+            console.print(f"[{DIM}]{wrap(a['explain'])}[/]")
             console.print()
             console.print(psql_table(a["columns"], a["rows"], numeric=a["numeric"]))
-            console.print("[dim]\\skip for the next level.[/]")
+            console.print(f"[{DIM}]\\skip for the next level[/]")
         elif cmd == "\\level":
             if len(args) == 2:
                 self.g.set_difficulty(args[0], int(args[1]))
@@ -293,7 +302,7 @@ class Shell:
             if not args:
                 for w in self.g.worlds():
                     mark = "→" if w["slug"] == self.g.world else " "
-                    tag = " 🤖" if w["source"] == "ai" else ""
+                    tag = " · ai" if w["source"] == "ai" else ""
                     console.print(f" {mark} {w['emoji']} [bold]{w['slug']}[/] — {w['name']}{tag} ({w['levels']} levels)  [dim]{w['blurb']}[/]")
             else:
                 self.g.set_world(args[0])
@@ -304,7 +313,7 @@ class Shell:
                 console.print("[yellow]Add OPENAI_API_KEY to .env to unlock AI worlds.[/]")
                 return
             theme = " ".join(args) or None
-            with console.status("[dim]🤖 Designing a new world (can take a minute)...[/]", spinner="dots"):
+            with console.status(f"[{DIM}]designing a new world · about a minute[/]", spinner="dots"):
                 w = self.g.new_world(theme)
             console.print(f"[green]New world:[/] {w['emoji']} [bold]{w['name']}[/] ({w['slug']}). "
                           f"Switch with \\world {w['slug']}")
@@ -317,7 +326,7 @@ class Shell:
                 f"{len(ex.levels)} questions in {self.g.status()['world']['name']}. No hints. "
                 + (f"Time limit: {minutes} min. " if minutes else "No time limit. ")
                 + "Type SQL to save an answer; \\next/\\prev to move; \\submit when done. \\help for more.",
-                title="📝 Exam", border_style="magenta"))
+                title="exam", title_align="left", border_style=DIM))
             self.exam_show()
         elif cmd == "\\score":
             self.score()
@@ -365,20 +374,21 @@ class Shell:
     def exam_show(self) -> None:
         ex = self.g.exam
         lv = ex.levels[self.exam_i]
-        saved = "  [green](answer saved)[/]" if ex.answers.get(self.exam_i) else ""
+        saved = f"  [{ACC}]● saved[/]" if ex.answers.get(self.exam_i) else ""
         console.print()
-        console.print(f"[bold magenta]Question {self.exam_i + 1}/{len(ex.levels)}[/] · {lv.points} pts{saved}")
-        console.print(wrap(lv.question))
+        console.print(f"  [bold]question {self.exam_i + 1}/{len(ex.levels)}[/]  [{DIM}]level {lv.difficulty} · {lv.points} pts[/]{saved}")
+        console.print()
+        console.print(f"[bold]{wrap(lv.question)}[/]")
         if lv.columns:
-            console.print("  [bold]Columns:[/] " + ", ".join(f'"{c}"' for c in lv.columns))
+            console.print(f"  [{DIM}]columns[/]  " + ", ".join(f'"{c}"' for c in lv.columns))
         if lv.ordered and lv.order_note:
-            console.print(f"  [bold]Sort:[/]    {lv.order_note}")
+            console.print(f"  [{DIM}]sort   [/]  {lv.order_note}")
         console.print()
 
     def exam_sql(self, sql: str) -> None:
         res = self.g.exam_answer(self.exam_i, sql)
         self.print_result(res)
-        console.print("[green]Answer saved.[/] [dim]\\next for the next question, \\submit when done.[/]")
+        console.print(f"[{ACC}]● saved[/]  [{DIM}]graded when you submit · \\next  \\prev  \\submit[/]")
 
     def exam_command(self, cmd: str, args: list[str]):
         ex = self.g.exam
@@ -417,14 +427,14 @@ class Shell:
         pct = round(100 * s["score"] / s["total"]) if s["total"] else 0
         console.print(Panel(
             f"[bold]{s['correct']}/{s['count']} correct[/]   {s['score']}/{s['total']} pts ({pct}%)   time {mins}m {secs}s",
-            title="📝 Exam results", border_style="magenta"))
+            title="exam results", title_align="left", border_style=DIM))
         for r in s["results"]:
-            mark = "[green]✓[/]" if r["passed"] else "[red]✗[/]"
+            mark = f"[{ACC}]✓[/]" if r["passed"] else f"[{RED}]✗[/]"
             console.print(f"{mark} [bold]Q{r['index'] + 1}[/] (L{r['difficulty']}, {r['points']} pts) {r['question'][:90]}")
             if not r["passed"]:
-                console.print(f"   [red]{r['message']}[/]")
+                console.print(f"   [{RED}]{r['message']}[/]")
                 if r["ai_comment"]:
-                    console.print(f"   [cyan]🤖 {r['ai_comment']}[/]")
+                    ai_line(r["ai_comment"], indent=3)
                 elif r["tip"]:
                     console.print(f"   {r['tip']}")
                 console.print(textwrap.indent(r["answer"], "     [dim]") .replace("\n", "[/]\n") + "[/]")
