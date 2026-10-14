@@ -60,3 +60,19 @@ def test_left_join(db, level):
     assert v.passed
     v2 = g(db, level("never"), "SELECT p.name FROM product p JOIN orders o ON p.productid = o.productid")
     assert not v2.passed
+
+
+def test_summary_row_hint(db, level, mini):
+    from sqlplay.engine.levels import Level
+    lv = Level(id="mini-x", world="mini", topic="aggregates", difficulty=2, question="q",
+               answer="SELECT COUNT(*), MAX(price) FROM product")
+    v = g(db, lv, "SELECT productid, price FROM product")
+    assert "single row" in v.message
+
+
+def test_no_join_no_pairing_blame(db, level, mini):
+    from sqlplay.engine.levels import Level
+    lv = Level(id="mini-y", world="mini", topic="select", difficulty=2, question="q",
+               answer="SELECT name FROM product WHERE price > 14")
+    v = g(db, lv, "SELECT category FROM product")
+    assert "joined" not in v.tip

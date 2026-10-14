@@ -74,6 +74,8 @@ The student knows: SELECT/WHERE, AS labels, CONCAT, ORDER BY, DISTINCT, MAX/MIN/
 subqueries, JOIN ... ON chains, self-joins, LEFT JOIN ... IS NULL, and is learning GROUP BY/HAVING.
 Rules:
 - Point at WHAT TO RECONSIDER. Never give the corrected query or the full answer.
+- Mention only the ONE most important problem (two at most). Don't list every missing piece,
+  don't spell out values, dates, or complete clauses: the student should still have to think.
 - Be specific to their query: name the clause, column or condition that's off.
 - 1-3 short sentences, plain English, friendly. No headings, no code blocks.
 - You may quote a tiny fragment of THEIR query, or name a keyword (e.g. DISTINCT, LEFT JOIN).

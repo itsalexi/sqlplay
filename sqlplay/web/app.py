@@ -52,7 +52,8 @@ def result_dict(res) -> dict | None:
         return None
     return {
         "columns": res.columns,
-        "rows": [list(r) for r in res.rows],
+        "rows": [list(r) for r in res.display],
+        "numeric": res.numeric,
         "truncated": res.truncated,
         "error": None if res.ok else res.error.psql_text(res.sql),
     }

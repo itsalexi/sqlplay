@@ -21,8 +21,12 @@ def _is_num(v) -> bool:
     return isinstance(v, (int, float)) and not isinstance(v, bool)
 
 
-def psql_table(columns: list[str], rows: list, truncated: bool = False) -> str:
-    """Render like psql's aligned output, including the (n rows) footer."""
+def psql_table(columns: list[str], rows: list, truncated: bool = False,
+               numeric: list[bool] | None = None) -> str:
+    """Render like psql's aligned output, including the (n rows) footer.
+
+    rows may hold raw values or pre-formatted strings (pass `numeric` then).
+    """
     cells = [[_cell(v) for v in r] for r in rows]
     widths = [_w(c) for c in columns]
     for r in cells:
@@ -40,7 +44,8 @@ def psql_table(columns: list[str], rows: list, truncated: bool = False) -> str:
         parts = []
         for i, c in enumerate(r):
             pad = " " * (widths[i] - _w(c))
-            parts.append(pad + c if _is_num(raw[i]) else c + pad)
+            right = numeric[i] if numeric is not None else _is_num(raw[i])
+            parts.append(pad + c if right else c + pad)
         out.append(" " + " | ".join(parts).rstrip() if parts else "")
     n = len(rows)
     footer = f"({n} row{'s' if n != 1 else ''}"

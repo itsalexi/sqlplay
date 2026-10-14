@@ -287,7 +287,7 @@ class Game:
             self.finished = True
         exp = grader.expected_result(self.db, lv)
         return {"answer": lv.answer.strip(), "explain": lv.explain, "columns": exp.columns,
-                "rows": [list(r) for r in exp.rows]}
+                "rows": [list(r) for r in exp.display], "numeric": exp.numeric}
 
     def _drop_level(self, lv: Level) -> None:
         with self.db.app() as conn:

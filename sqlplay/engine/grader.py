@@ -42,7 +42,8 @@ class Verdict:
             if r is None
             else {
                 "columns": r.columns,
-                "rows": [list(x) for x in r.rows],
+                "rows": [list(x) for x in r.display],
+                "numeric": r.numeric,
                 "truncated": r.truncated,
                 "error": None if r.ok else r.error.psql_text(r.sql),
             },
@@ -128,9 +129,37 @@ def _is_sorted(rows: list[tuple], keys: list[tuple[int, bool]]) -> bool:
 
 
 # ---------------------------------------------------------------- diagnosis
-def _row_feedback(user: list[tuple], exp: list[tuple]) -> tuple[str, str]:
+def _shape(sql: str) -> dict:
+    """Rough facts about a SELECT: does it join, aggregate, filter?"""
+    out = {"joins": False, "aggregate": False, "where": False, "distinct": False}
+    try:
+        stmt = parse_sql(sandbox.clean_sql(sql))[0].stmt
+    except (ParseError, IndexError):
+        return out
+    if not isinstance(stmt, ast.SelectStmt):
+        return out
+    frm = stmt.fromClause or ()
+    out["joins"] = len(frm) > 1 or any(isinstance(f, ast.JoinExpr) for f in frm)
+    out["where"] = stmt.whereClause is not None
+    out["distinct"] = stmt.distinctClause is not None
+    out["aggregate"] = bool(stmt.groupClause) or any(
+        isinstance(t.val, ast.FuncCall)
+        and getattr(t.val.funcname[-1], "sval", "").lower() in ("count", "sum", "avg", "min", "max")
+        for t in (stmt.targetList or ())
+    )
+    return out
+
+
+def _row_feedback(user: list[tuple], exp: list[tuple], user_sql: str = "") -> tuple[str, str]:
     cu, ce = Counter(user), Counter(exp)
     nu, ne = len(user), len(exp)
+    shape = _shape(user_sql)
+    if ne == 1 and nu > 1 and not shape["aggregate"]:
+        return (
+            f"The answer is a single row; you returned {nu}.",
+            "This question wants a summary. Use aggregates like COUNT, SUM, AVG, MIN or MAX "
+            "to squash the matching rows into one.",
+        )
     if nu == 0:
         return (
             f"Your query returned no rows; expected {ne}.",
@@ -143,7 +172,7 @@ def _row_feedback(user: list[tuple], exp: list[tuple]) -> tuple[str, str]:
                 f"Too many rows: {nu} instead of {ne}. The extra rows are duplicates.",
                 "The same row shows up more than once (often because of a JOIN). Try SELECT DISTINCT.",
             )
-        if ne and nu >= ne * 3 and not (set(ce) <= set(cu)):
+        if ne and nu >= ne * 3 and not (set(ce) <= set(cu)) and shape["joins"]:
             return (
                 f"Way too many rows: {nu} instead of {ne}.",
                 "Rows are being paired with rows they shouldn't be. Check that every joined table "
@@ -230,7 +259,7 @@ def grade(db: Database, level: Level, user_sql: str) -> Verdict:
         if res.truncated:
             msg, tip = "Too many rows (over 500).", "Check your join conditions: every row is pairing with every row."
         else:
-            msg, tip = _row_feedback(u, e)
+            msg, tip = _row_feedback(u, e, user_sql)
         return Verdict(False, "rows", msg, tip, **base)
 
     if level.ordered:

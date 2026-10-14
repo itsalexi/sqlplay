@@ -1,15 +1,22 @@
-// psqlay web front end (no framework).
+// psqlay web — minimalist terminal front end. No framework.
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
+const MOD = isMac ? "⌘" : "Ctrl";
+const ALT = isMac ? "⌥" : "Alt+";
 
-let S = null;           // last /api/state
+let S = null;            // last /api/state
+let mode = "practice";   // practice | exam | report
 let examIndex = 0;
-let timerHandle = null;
+let examDrafts = {};
+let timer = null;
+let passed = false;
 let lastSQL = "";
 
+// ------------------------------------------------------------------ utils
 async function api(path, body) {
   const opts = body === undefined
-    ? { method: "GET" }
+    ? {}
     : { method: "POST", headers: { "Content-Type": "application/json", "X-Psqlay": "1" }, body: JSON.stringify(body) };
   const r = await fetch("/api/" + path, opts);
   const data = await r.json().catch(() => ({}));
@@ -17,361 +24,547 @@ async function api(path, body) {
   return data;
 }
 
-function toast(msg, ms = 3000) {
+function toast(msg, { ms = 2600, spin = false } = {}) {
   const t = $("toast");
   t.textContent = msg;
+  t.className = "toast" + (spin ? " spin" : "");
   t.hidden = false;
   clearTimeout(toast.h);
-  toast.h = setTimeout(() => (t.hidden = true), ms);
+  if (ms) toast.h = setTimeout(() => (t.hidden = true), ms);
+}
+const untoast = () => ($("toast").hidden = true);
+
+function sheet({ html, ok = "OK", cancel = "Cancel", onOk, onOpen }) {
+  $("sheet-body").innerHTML = html;
+  $("sheet-ok").textContent = ok;
+  $("sheet-cancel").hidden = !cancel;
+  $("sheet-cancel").textContent = cancel || "";
+  $("sheet").hidden = false;
+  const close = () => { $("sheet").hidden = true; document.removeEventListener("keydown", onKey, true); };
+  const onKey = (e) => {
+    if (e.key === "Escape") { e.preventDefault(); close(); }
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("sheet-ok").click(); }
+  };
+  document.addEventListener("keydown", onKey, true);
+  $("sheet-cancel").onclick = close;
+  $("sheet-ok").onclick = () => { close(); onOk && onOk(); };
+  onOpen && onOpen();
 }
 
-function modal(html, onClose) {
-  $("modal-body").innerHTML = html;
-  $("modal-close").textContent = "Got it";
-  $("modal").hidden = false;
-  $("modal-close").onclick = () => { $("modal").hidden = true; onClose && onClose(); };
+function confirmSheet(title, text, ok, onOk) {
+  sheet({ html: `<h3>${esc(title)}</h3><p>${esc(text)}</p>`, ok, onOk });
 }
 
-// ------------------------------------------------------------------ rendering
-function renderTable(res, el) {
-  if (!res) { el.innerHTML = ""; return; }
-  if (res.error) { el.innerHTML = `<pre class="err">${esc(res.error)}</pre>`; return; }
-  const head = res.columns.map((c) => `<th>${esc(c)}</th>`).join("");
-  const body = res.rows.map((r) => "<tr>" + r.map((v) => {
-    if (v === null) return '<td class="null">NULL</td>';
-    const num = typeof v === "number";
-    return `<td class="${num ? "num" : ""}">${esc(v)}</td>`;
-  }).join("") + "</tr>").join("");
-  const n = res.rows.length;
-  el.innerHTML = `<table class="grid"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>
-    <div class="rowcount">(${n} row${n === 1 ? "" : "s"}${res.truncated ? ", showing first 500" : ""})</div>`;
+// psql-style text table
+function psqlTable(columns, rows, truncated, numeric) {
+  numeric = numeric || columns.map((_, i) => rows.some((r) => typeof r[i] === "number"));
+  const cell = (v) => (v === null ? "" : String(v));
+  const cells = rows.map((r) => r.map(cell));
+  const w = columns.map((c, i) => Math.max(c.length, ...cells.map((r) => r[i].length)));
+  const head = columns.map((c, i) => {
+    const pad = w[i] - c.length, l = Math.floor(pad / 2);
+    return " ".repeat(l) + esc(c) + " ".repeat(pad - l);
+  }).join(" | ");
+  const rule = w.map((n) => "-".repeat(n)).join("-+-");
+  const body = rows.map((r, ri) => " " + r.map((v, i) => {
+    const s = cells[ri][i], pad = " ".repeat(w[i] - s.length);
+    const txt = v === null ? "" : esc(s);
+    return numeric[i] ? pad + txt : txt + pad;
+  }).join(" | ").replace(/\s+$/, "")).join("\n");
+  const n = rows.length;
+  const foot = `(${n} row${n === 1 ? "" : "s"}${truncated ? ", showing first 500" : ""})`;
+  return `<pre class="table"><span class="h"> ${head}</span>\n<span class="rule">-${rule}-</span>\n${body}${n ? "\n" : ""}<span class="foot">${foot}</span></pre>`;
 }
 
-function renderTop() {
+function resultHTML(res) {
+  if (!res) return "";
+  if (res.error) return `<pre class="err">${esc(res.error)}</pre>`;
+  return psqlTable(res.columns, res.rows, res.truncated, res.numeric);
+}
+
+// ------------------------------------------------------------------ editor
+const ta = () => $("sql");
+
+function promptName() {
+  const slug = (S && (S.exam ? S.exam.world : S.status.world.slug)) || "psqlay";
+  return slug;
+}
+
+function syncEditor() {
+  const t = ta();
+  const lines = Math.max(3, t.value.split("\n").length);
+  const name = promptName();
+  const first = `${name}=#`, rest = `${name}-#`;
+  $("gutter").textContent = [first, ...Array(lines - 1).fill(rest)].join("\n");
+  t.style.height = "auto";
+  t.style.height = t.scrollHeight + "px";
+}
+
+function setEditor(v) { ta().value = v || ""; syncEditor(); }
+
+function renderKeys() {
+  const k = $("keys");
+  if (mode === "exam") {
+    k.innerHTML = `
+      <button data-act="prev"><kbd>${ALT}←</kbd>prev</button>
+      <button data-act="next"><kbd>${ALT}→</kbd>next</button>`;
+    $("run-btn").innerHTML = `Save <kbd>${MOD}↵</kbd>`;
+  } else {
+    const used = S?.level?.hints_used?.length || 0, total = S?.level?.hint_count || 0;
+    k.innerHTML = `
+      <button data-act="hint" ${used >= total ? "disabled" : ""}><kbd>${ALT}H</kbd>hint ${used}/${total}</button>
+      <button data-act="answer"><kbd>${ALT}A</kbd>give up</button>
+      <button data-act="skip"><kbd>${ALT}S</kbd>skip</button>`;
+    $("run-btn").innerHTML = `Run <kbd>${MOD}↵</kbd>`;
+  }
+  k.querySelectorAll("[data-act]").forEach((b) => (b.onclick = () => act(b.dataset.act)));
+}
+
+function act(a) {
+  ({
+    hint, answer: giveUp, skip: nextLevel,
+    prev: () => examGo(examIndex - 1), next: () => examGo(examIndex + 1),
+  })[a]?.();
+}
+
+// ------------------------------------------------------------------ render
+function bump(id, value) {
+  const el = $(id);
+  if (el.textContent !== String(value)) {
+    el.textContent = value;
+    el.classList.add("bump");
+    setTimeout(() => el.classList.remove("bump"), 900);
+  }
+}
+
+function renderBar() {
   const st = S.status;
-  $("score").textContent = st.score;
-  $("streak").textContent = "🔥 " + st.streak;
-  const b = $("ai-badge");
-  b.textContent = st.ai ? "🤖 AI on" : "AI off (no key)";
-  b.className = "badge" + (st.ai ? " on" : "");
-  b.title = S.models ? `generate: ${S.models.generate} · feedback: ${S.models.feedback}` : "Add OPENAI_API_KEY to .env";
+  bump("score", st.score);
+  bump("streak", st.streak);
+  const dot = $("ai-dot");
+  dot.className = "ai-dot" + (st.ai ? " on" : "");
+  dot.title = S.models ? `generate: ${S.models.generate}\nfeedback: ${S.models.feedback}` : "Add OPENAI_API_KEY to .env to enable AI";
   $("newworld-btn").hidden = !st.ai;
-
+  $("world-emoji").textContent = st.world.emoji || "";
   $("world").innerHTML = S.worlds.map((w) =>
-    `<option value="${esc(w.slug)}" ${w.slug === st.world.slug ? "selected" : ""}>${esc(w.emoji)} ${esc(w.name)}${w.source === "ai" ? " 🤖" : ""}</option>`
-  ).join("");
-  const opts = [`<option value="">🎲 Mix (adaptive)</option>`].concat(
+    `<option value="${esc(w.slug)}" ${w.slug === st.world.slug ? "selected" : ""}>${esc(w.name)}${w.source === "ai" ? "  · ai" : ""}</option>`).join("");
+  $("topic").innerHTML = [`<option value="">mix</option>`].concat(
     st.topics.filter((t) => t.unlocked).map((t) =>
-      `<option value="${t.topic}" ${st.locked === t.topic ? "selected" : ""}>${esc(t.name)}</option>`)
-  );
-  $("topic").innerHTML = opts.join("");
+      `<option value="${t.topic}" ${st.locked === t.topic ? "selected" : ""}>${esc(t.name.toLowerCase())}</option>`)).join("");
+  autosize($("world")); autosize($("topic"));
 }
 
-function renderSidebar() {
-  $("schema").innerHTML = S.schema.map((t) => `
-    <details class="tbl" open>
-      <summary>${esc(t.table)} <span class="rows">(${t.rows})</span></summary>
+function autosize(sel) {
+  const span = document.createElement("span");
+  span.style.cssText = "position:absolute;visibility:hidden;white-space:pre;font:inherit";
+  span.textContent = sel.options[sel.selectedIndex]?.text || "";
+  sel.parentNode.appendChild(span);
+  sel.style.width = span.offsetWidth + 6 + "px";
+  span.remove();
+}
+
+function renderRail() {
+  const open = new Set([...document.querySelectorAll(".tbl.open")].map((e) => e.dataset.t));
+  const first = !$("schema").children.length;
+  $("schema").innerHTML = S.schema.map((t, i) => `
+    <div class="tbl ${open.has(t.table) || (first && i < 2) ? "open" : ""}" data-t="${esc(t.table)}">
+      <button><span class="chev">›</span>${esc(t.table)}<span class="n">${t.rows}</span></button>
       <div class="cols">${t.columns.map((c) => `
-        <div data-col="${esc(c.name)}" title="click to insert">
-          <span>${esc(c.name)}</span><span class="type">${esc(c.type)}</span>
-          <span class="key">${c.pk ? "PK" : c.fk ? "→ " + esc(c.fk) : ""}</span>
+        <div class="col" data-col="${esc(c.name)}" title="${c.fk ? "→ " + esc(c.fk) : ""}">
+          <span>${esc(c.name)} ${c.pk ? '<span class="k">●</span>' : c.fk ? '<span class="f">→</span>' : ""}</span>
+          <span class="t">${esc(c.type)}</span>
         </div>`).join("")}</div>
-    </details>`).join("");
-  $("schema").querySelectorAll("[data-col]").forEach((d) => d.onclick = () => insertText(d.dataset.col));
-  $("joinmap").textContent = S.join_map || "";
-  $("notes").textContent = S.notes || "";
+    </div>`).join("");
+  $("schema").querySelectorAll(".tbl > button").forEach((b) => (b.onclick = () => b.parentNode.classList.toggle("open")));
+  $("schema").querySelectorAll(".col").forEach((c) => (c.onclick = () => insert(c.dataset.col)));
+  $("joinmap").innerHTML = joinMapHTML(S.join_map || "");
+  const notes = (S.notes || "").trim();
+  $("notes").innerHTML = notes ? `<details><summary>data notes</summary><div>${esc(notes)}</div></details>` : "";
   $("levels").innerHTML = S.status.topics.map((t) => `
-    <div class="lvl ${t.unlocked ? "" : "locked"}" title="${t.unlocked ? "" : "Unlocks after 3 aggregate passes"}">
-      <span>${esc(t.name)}</span><span class="muted">L${t.difficulty} · ${t.passed}/${t.attempted}</span>
-      <div class="bar"><i style="width:${t.difficulty * 20}%"></i></div>
+    <div class="lv ${t.unlocked ? "" : "locked"}" title="${t.unlocked ? `${t.passed} passed of ${t.attempted}` : "unlocks after 3 aggregate passes"}">
+      <span class="name">${esc(t.name.toLowerCase())}</span><span class="val">L${t.difficulty}</span>
+      <span class="track"><i style="width:${t.difficulty * 20}%"></i></span>
     </div>`).join("");
 }
 
-function reqs(lv, el) {
-  const bits = [];
-  if (lv.columns && lv.columns.length) bits.push("Columns: " + lv.columns.map((c) => `<code>"${esc(c)}"</code>`).join(" "));
-  if (lv.ordered && lv.order_note) bits.push("Sort: <code>" + esc(lv.order_note) + "</code>");
-  el.innerHTML = bits.join(" &nbsp;·&nbsp; ");
+// "a -col- b -col- c" -> one table per line, link column dimmed; "t.x -> t.y" kept as a self-ref line
+function joinMapHTML(text) {
+  return text.trim().split("\n").filter(Boolean).map((line) => {
+    line = line.trim();
+    const self = line.match(/^(\w+)\.(\w+)\s*->\s*(\w+)\.(\w+)$/);
+    if (self) {
+      return `<div class="jm"><span class="jt">${esc(self[1])}</span><span class="jc">.${esc(self[2])} → .${esc(self[4])}</span><span class="jself">self</span></div>`;
+    }
+    const parts = line.split(/\s+-(\w+)-\s+/);
+    if (parts.length < 3) return `<div class="jm"><span class="jc">${esc(line)}</span></div>`;
+    let html = `<div class="jm"><span class="jt">${esc(parts[0])}</span>`;
+    for (let i = 1; i < parts.length; i += 2) {
+      html += `<div class="jhop"><span class="jc">${esc(parts[i])}</span><span class="jt">${esc(parts[i + 1])}</span></div>`;
+    }
+    return html + "</div>";
+  }).join("");
 }
 
-function renderLevel() {
+function renderQuestion(lv, metaText) {
+  $("q-dots").innerHTML = [1, 2, 3, 4, 5].map((i) => `<i class="${i <= lv.difficulty ? "on" : ""}"></i>`).join("");
+  $("q-meta").textContent = metaText;
+  $("q-text").textContent = lv.question;
+  const rows = [];
+  if (lv.columns && lv.columns.length) rows.push(["columns", lv.columns.map((c) => `<code>"${esc(c)}"</code>`).join(", ")]);
+  if (lv.ordered && lv.order_note) rows.push(["sort", esc(lv.order_note)]);
+  $("q-reqs").innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+}
+
+function renderPractice() {
   const lv = S.level;
   if (!lv) return;
-  $("q-level").textContent = "Level " + lv.difficulty;
-  $("q-topic").textContent = lv.topic_name;
-  $("q-source").textContent = { builtin: "", generated: "· generated", ai: "· 🤖 AI" }[lv.source] || "";
-  $("q-points").textContent = lv.points + " pts";
-  $("q-text").textContent = lv.question;
-  reqs(lv, $("q-reqs"));
-  $("hints").innerHTML = lv.hints_used.map((h, i) => `<div class="hint">💡 <b>Hint ${i + 1}:</b> ${esc(h)}</div>`).join("");
-  $("hint-btn").disabled = lv.hints_used.length >= lv.hint_count;
-  if (lv.groupby_intro) modal(`<h3>🆕 GROUP BY / HAVING unlocked</h3><pre>${esc(lv.groupby_intro)}</pre>`);
+  const src = { generated: " · generated", ai: " · ai" }[lv.source] || "";
+  renderQuestion(lv, `level ${lv.difficulty} · ${lv.topic_name.toLowerCase()} · ${lv.points} pts${src}`);
+  $("hints").innerHTML = lv.hints_used.map((h, i) => `<div class="hint"><b>hint ${i + 1}</b>${esc(h)}</div>`).join("");
+  renderKeys();
+  if (lv.groupby_intro) {
+    sheet({ html: `<h3>New topic unlocked: GROUP BY / HAVING</h3><pre>${esc(lv.groupby_intro)}</pre>`, ok: "Got it", cancel: null });
+  }
+}
+
+function renderMode() {
+  const exam = mode === "exam";
+  $("bar").hidden = exam;
+  $("exam-bar").hidden = !exam;
+  $("q").hidden = mode === "report";
+  $("term").hidden = mode === "report";
+  $("out").hidden = mode === "report";
+  $("report").hidden = mode !== "report";
 }
 
 function renderAll() {
-  renderTop();
-  renderSidebar();
-  const inExam = !!S.exam;
-  $("practice").hidden = inExam;
-  $("exam").hidden = !inExam;
-  $("exam-btn").hidden = inExam;
-  if (inExam) renderExam(); else { $("exam-report").hidden = true; renderLevel(); }
+  if (S.exam && mode !== "exam") { mode = "exam"; examIndex = 0; examDrafts = {}; }
+  if (!S.exam && mode === "exam") mode = "practice";
+  renderMode();
+  renderBar();
+  renderRail();
+  if (mode === "exam") renderExam();
+  else if (mode === "practice") renderPractice();
+  syncEditor();
 }
 
-async function refresh() {
-  S = await api("state");
-  renderAll();
+async function refresh() { S = await api("state"); renderAll(); }
+
+function insert(text) {
+  const t = ta(), s = t.selectionStart, e = t.selectionEnd;
+  t.value = t.value.slice(0, s) + text + t.value.slice(e);
+  t.selectionStart = t.selectionEnd = s + text.length;
+  t.focus(); syncEditor();
 }
 
-function insertText(t) {
-  const ta = S.exam ? $("exam-sql") : $("sql");
-  const s = ta.selectionStart, e = ta.selectionEnd;
-  ta.value = ta.value.slice(0, s) + t + ta.value.slice(e);
-  ta.selectionStart = ta.selectionEnd = s + t.length;
-  ta.focus();
-}
+function shake() { const t = $("term"); t.classList.remove("bad"); void t.offsetWidth; t.classList.add("bad"); }
 
 // ------------------------------------------------------------------ practice
-function clearFeedback() { $("feedback").innerHTML = ""; $("result").innerHTML = ""; }
-
-async function runAndGrade() {
-  const sql = $("sql").value.trim();
+async function run() {
+  if (mode === "exam") return examSave();
+  const sql = ta().value.trim();
   if (!sql) return;
+  if (passed) { /* re-running after a pass is fine */ }
   lastSQL = sql;
   $("run-btn").disabled = true;
   try {
     const out = await api("submit", { sql });
-    if (out.broken) { toast(out.message, 5000); return; }
+    if (out.broken) { toast(out.message, { ms: 5000 }); return; }
     const v = out.verdict;
-    renderTable(v.result, $("result"));
     S.status = out.status;
-    renderTop(); renderSidebar();
-    const fb = $("feedback");
+    renderBar(); renderRail();
+    const table = resultHTML(v.result);
     if (v.passed) {
-      let head = "✓ Correct!";
+      passed = true;
+      $("term").classList.add("ok");
       let extra = "";
       if (out.first_pass && out.outcome) {
         const o = out.outcome;
-        head = `✓ PASS! +${o.points} pts`;
-        if (o.difficulty_after > o.difficulty_before) extra += ` &nbsp;⬆ Level ${o.difficulty_after} unlocked in ${esc(S.level.topic_name)}`;
-        if (o.unlocked) extra += " &nbsp;🆕 New topic: GROUP BY / HAVING";
+        extra = `+${o.points} pts`;
+        if (o.difficulty_after > o.difficulty_before) extra += ` · ${esc(S.level.topic_name.toLowerCase())} → level ${o.difficulty_after}`;
+        if (o.unlocked) extra += " · unlocked group by";
       }
-      fb.innerHTML = `<div class="feedback pass"><div class="head">${head}${extra}</div>
-        <div id="ai-line"></div>
-        <div class="next"><button class="primary" id="next-inline">Next level →</button></div></div>`;
+      $("out").innerHTML = `
+        <div class="verdict ok"><span class="sym">✓</span><span>correct</span><span class="extra">${extra}</span></div>
+        <div id="ai-slot"></div>
+        <div class="next-hint"><button id="next-inline">next level</button><kbd>↵</kbd></div>
+        ${table}`;
       $("next-inline").onclick = nextLevel;
+      ta().blur();
       if (S.status.ai) {
-        api("pass_tip", { sql }).then((r) => { if (r.text) $("ai-line").innerHTML = `<div class="ai">🤖 ${esc(r.text)}</div>`; }).catch(() => {});
+        api("pass_tip", { sql }).then((r) => {
+          if (r.text && $("ai-slot")) $("ai-slot").innerHTML = `<div class="ai"><span class="tag">AI</span><span class="txt">${esc(r.text)}</span></div>`;
+        }).catch(() => {});
       }
     } else {
-      fb.innerHTML = `<div class="feedback fail"><div class="head">✗ ${esc(v.message)}</div>
+      $("term").classList.remove("ok");
+      shake();
+      $("out").innerHTML = `
+        <div class="verdict no"><span class="sym">✗</span><span>${esc(v.message)}</span></div>
         ${v.tip ? `<div class="tip">${esc(v.tip)}</div>` : ""}
-        ${S.status.ai ? '<div class="ai loading spin" id="ai-line">🤖 thinking</div>' : ""}</div>`;
+        ${S.status.ai ? `<div class="ai loading" id="ai-line"><span class="tag">AI</span><span class="txt">…</span></div>` : ""}
+        ${table}`;
       if (S.status.ai) {
         api("tutor", { sql }).then((r) => {
           const el = $("ai-line");
           if (!el || lastSQL !== sql) return;
-          if (r.text) { el.className = "ai"; el.textContent = "🤖 " + r.text; } else el.remove();
-        }).catch(() => { const el = $("ai-line"); el && el.remove(); });
+          if (r.text) { el.className = "ai"; el.querySelector(".txt").textContent = r.text; } else el.remove();
+        }).catch(() => $("ai-line")?.remove());
       }
     }
-  } catch (e) { toast(e.message, 5000); }
+  } catch (e) { toast(e.message, { ms: 5000 }); }
   finally { $("run-btn").disabled = false; }
 }
 
 async function nextLevel() {
-  $("next-btn").disabled = true;
-  const t = setTimeout(() => toast("Finding your next level…", 20000), 600);
+  if (mode !== "practice") return;
+  const slow = setTimeout(() => toast("Preparing your next level", { ms: 0, spin: true }), 500);
   try {
     S = await api("next", { topic: null });
-    clearFeedback();
-    $("sql").value = "";
+    passed = false;
+    $("term").classList.remove("ok");
+    $("out").innerHTML = "";
+    setEditor("");
     renderAll();
-  } catch (e) { toast(e.message, 5000); }
-  finally { clearTimeout(t); $("toast").hidden = true; $("next-btn").disabled = false; }
+    ta().focus();
+  } catch (e) { toast(e.message, { ms: 5000 }); }
+  finally { clearTimeout(slow); untoast(); }
 }
 
 async function hint() {
+  if (mode !== "practice") return;
   const h = await api("hint", {});
-  if (h.text) { S.level.hints_used.push(h.text); renderLevel(); }
+  if (h.text) { S.level.hints_used.push(h.text); renderPractice(); }
 }
 
-async function giveUp() {
-  if (!S.level.finished && !confirm("Give up and see the answer? (Counts as a miss.)")) return;
-  const a = await api("answer", {});
-  S.status = a.status; renderTop(); renderSidebar();
-  $("feedback").innerHTML = `<div class="feedback fail answer"><div class="head">Answer</div>
-    <pre>${esc(a.answer)}</pre><div class="tip">${esc(a.explain)}</div>
-    <div class="next"><button class="primary" id="next-inline">Next level →</button></div></div>`;
-  $("next-inline").onclick = nextLevel;
-  renderTable({ columns: a.columns, rows: a.rows }, $("result"));
+function giveUp() {
+  if (mode !== "practice") return;
+  const go = async () => {
+    const a = await api("answer", {});
+    S.status = a.status; renderBar(); renderRail();
+    passed = true;
+    $("out").innerHTML = `
+      <div class="verdict info"><span class="sym">→</span><span>answer</span></div>
+      <pre class="answer">${esc(a.answer)}</pre>
+      <div class="tip">${esc(a.explain)}</div>
+      <div class="next-hint"><button id="next-inline">next level</button><kbd>↵</kbd></div>
+      ${psqlTable(a.columns, a.rows, false, a.numeric)}`;
+    $("next-inline").onclick = nextLevel;
+    ta().blur();
+  };
+  if (S.level.finished) go();
+  else confirmSheet("Show the answer?", "This counts as a miss for this topic.", "Show answer", go);
 }
 
 // ------------------------------------------------------------------ exam
 function renderExam() {
-  const ex = S.exam;
-  const q = ex.questions[examIndex];
-  $("exam-nav").innerHTML = ex.questions.map((qq, i) =>
-    `<button class="${i === examIndex ? "cur" : ""} ${qq.answer_sql ? "done" : ""}" data-i="${i}">${i + 1}</button>`).join("");
-  $("exam-nav").querySelectorAll("button").forEach((b) => b.onclick = () => { saveExamDraft(); examIndex = +b.dataset.i; renderExam(); });
-  $("eq-level").textContent = "Level " + q.difficulty;
-  $("eq-num").textContent = `Question ${examIndex + 1} of ${ex.questions.length}`;
-  $("eq-points").textContent = q.points + " pts";
-  $("eq-text").textContent = q.question;
-  reqs(q, $("eq-reqs"));
-  $("exam-sql").value = q.answer_sql || "";
-  $("exam-saved").textContent = q.answer_sql ? "answer saved" : "";
-  $("exam-result").innerHTML = "";
+  const ex = S.exam, q = ex.questions[examIndex];
+  $("exam-dots").innerHTML = ex.questions.map((qq, i) => {
+    const done = (examDrafts[i] ?? qq.answer_sql ?? "").trim();
+    return `<button class="${i === examIndex ? "cur" : ""} ${done ? "done" : ""}" data-i="${i}">${i + 1}</button>`;
+  }).join("");
+  $("exam-dots").querySelectorAll("button").forEach((b) => (b.onclick = () => examGo(+b.dataset.i)));
+  renderQuestion(q, `question ${examIndex + 1} of ${ex.questions.length} · ${q.points} pts`);
+  $("hints").innerHTML = "";
+  setEditor(examDrafts[examIndex] ?? q.answer_sql ?? "");
+  $("out").innerHTML = "";
+  renderKeys();
   startTimer();
 }
 
-function saveExamDraft() {
-  if (!S.exam) return;
-  const q = S.exam.questions[examIndex];
-  const v = $("exam-sql").value;
-  if (v.trim() && v !== q.answer_sql) { q.answer_sql = v; api("exam/answer", { index: examIndex, sql: v }).catch(() => {}); }
+function stashDraft() { if (mode === "exam") examDrafts[examIndex] = ta().value; }
+
+function examGo(i) {
+  const n = S.exam.questions.length;
+  if (i < 0 || i >= n) return;
+  stashDraft();
+  const sql = (examDrafts[examIndex] || "").trim();
+  if (sql && sql !== (S.exam.questions[examIndex].answer_sql || "").trim()) {
+    S.exam.questions[examIndex].answer_sql = sql;
+    api("exam/answer", { index: examIndex, sql }).catch(() => {});
+  }
+  examIndex = i;
+  renderExam();
+  ta().focus();
 }
 
 async function examSave() {
-  const sql = $("exam-sql").value;
+  const sql = ta().value;
   if (!sql.trim()) return;
+  examDrafts[examIndex] = sql;
   const res = await api("exam/answer", { index: examIndex, sql });
   S.exam.questions[examIndex].answer_sql = sql;
-  $("exam-saved").textContent = "answer saved ✓";
-  renderTable(res, $("exam-result"));
-  $("exam-nav").querySelectorAll("button")[examIndex].classList.add("done");
+  $("out").innerHTML = `<div class="verdict ok"><span class="sym">●</span><span>saved</span><span class="extra">graded when you submit</span></div>${resultHTML(res)}`;
+  $("exam-dots").children[examIndex].classList.add("done");
 }
 
 function startTimer() {
-  clearInterval(timerHandle);
+  clearInterval(timer);
   const ex = S.exam;
-  if (!ex || ex.remaining === null || ex.remaining === undefined) { $("exam-timer").textContent = ""; return; }
+  if (!ex || ex.remaining == null) { $("exam-timer").textContent = ""; return; }
   const end = Date.now() + ex.remaining * 1000;
   const tick = () => {
     const left = Math.max(0, Math.round((end - Date.now()) / 1000));
     $("exam-timer").textContent = `${String(Math.floor(left / 60)).padStart(2, "0")}:${String(left % 60).padStart(2, "0")}`;
-    if (left === 0) { clearInterval(timerHandle); toast("⏰ Time's up! Submitting…"); submitExam(true); }
+    $("exam-timer").classList.toggle("low", left < 300);
+    if (left === 0) { clearInterval(timer); toast("Time's up"); submitExam(true); }
   };
   tick();
-  timerHandle = setInterval(tick, 1000);
+  timer = setInterval(tick, 1000);
 }
 
-async function startExam() {
-  const html = `<h3>📝 Mock exam</h3>
-    <p>10 questions in this world, mixed like the HOA: ~3 at level 3, ~5 at level 4, ~2 at level 5.
-    No hints. You can revise answers until you submit.</p>
-    <label>Time limit in minutes (blank = none): <input id="exam-min" type="number" min="5" max="240" placeholder="e.g. 45"></label>`;
-  modal(html, async () => {
-    const m = parseInt($("exam-min").value, 10);
-    try {
-      toast("Building your exam…", 15000);
-      S = await api("exam/start", { minutes: Number.isFinite(m) ? m : null });
-      $("toast").hidden = true;
-      examIndex = 0;
-      renderAll();
-    } catch (e) { toast(e.message, 5000); }
+function startExam() {
+  let minutes = null;
+  sheet({
+    html: `<h3>Mock exam</h3>
+      <p>Ten questions in this world, mixed like the HOA: three at level 3, five at level 4, two at level 5.
+      No hints. Revise answers until you submit.</p>
+      <div class="seg" id="seg">${[["none", null], ["30 min", 30], ["45 min", 45], ["60 min", 60], ["90 min", 90]]
+        .map(([l, v]) => `<button data-v="${v ?? ""}" class="${v === null ? "on" : ""}">${l}</button>`).join("")}</div>`,
+    ok: "Start",
+    onOpen: () => $("seg").querySelectorAll("button").forEach((b) => (b.onclick = () => {
+      $("seg").querySelectorAll("button").forEach((x) => x.classList.remove("on"));
+      b.classList.add("on");
+      minutes = b.dataset.v ? +b.dataset.v : null;
+    })),
+    onOk: async () => {
+      toast("Building your exam", { ms: 0, spin: true });
+      try {
+        S = await api("exam/start", { minutes });
+        mode = "exam"; examIndex = 0; examDrafts = {};
+        renderAll(); ta().focus();
+      } catch (e) { toast(e.message, { ms: 5000 }); return; }
+      untoast();
+    },
   });
-  $("modal-close").textContent = "Start exam";
 }
 
-async function submitExam(force) {
-  saveExamDraft();
-  const blank = S.exam.questions.filter((q) => !q.answer_sql || !q.answer_sql.trim()).length;
-  if (!force && blank && !confirm(`${blank} question(s) are blank. Submit anyway?`)) return;
-  clearInterval(timerHandle);
-  $("exam-submit").disabled = true;
-  toast(S.status.ai ? "Grading and writing comments…" : "Grading…", 60000);
-  try {
-    const out = await api("exam/submit", {});
-    $("toast").hidden = true;
-    S = out.state;
-    renderAll();
-    showReport(out.summary);
-  } catch (e) { toast(e.message, 5000); }
-  finally { $("exam-submit").disabled = false; }
+function submitExam(force) {
+  stashDraft();
+  const go = async () => {
+    // flush unsaved drafts
+    for (const [i, sql] of Object.entries(examDrafts)) {
+      if (sql.trim() && sql.trim() !== (S.exam.questions[i].answer_sql || "").trim()) {
+        await api("exam/answer", { index: +i, sql }).catch(() => {});
+        S.exam.questions[i].answer_sql = sql;
+      }
+    }
+    clearInterval(timer);
+    toast(S.status.ai ? "Grading and writing feedback" : "Grading", { ms: 0, spin: true });
+    try {
+      const out = await api("exam/submit", {});
+      S = out.state;
+      mode = "report";
+      renderAll();
+      showReport(out.summary);
+    } catch (e) { toast(e.message, { ms: 5000 }); return; }
+    untoast();
+  };
+  const blank = S.exam.questions.filter((q, i) => !((examDrafts[i] ?? q.answer_sql ?? "").trim())).length;
+  if (force || !blank) go();
+  else confirmSheet("Submit exam?", `${blank} question${blank === 1 ? " is" : "s are"} still blank.`, "Submit", go);
 }
 
 function showReport(s) {
   const pct = s.total ? Math.round((100 * s.score) / s.total) : 0;
-  const mins = Math.floor(s.seconds / 60), secs = s.seconds % 60;
-  const items = s.results.map((r) => `
-    <div class="report-item ${r.passed ? "ok" : "no"}">
-      <b>${r.passed ? "✓" : "✗"} Q${r.index + 1}</b> <span class="muted">L${r.difficulty} · ${r.points} pts · ${esc(r.topic)}</span>
-      <div>${esc(r.question)}</div>
-      ${r.passed ? "" : `
-        <div class="muted">Your answer:</div><pre>${esc(r.sql || "(blank)")}</pre>
-        <div style="color:var(--bad)">${esc(r.message)}</div>
-        ${r.ai_comment ? `<div class="ai" style="color:#9fd0ff">🤖 ${esc(r.ai_comment)}</div>` : r.tip ? `<div>${esc(r.tip)}</div>` : ""}
-        <div class="muted">Answer:</div><pre>${esc(r.answer)}</pre>
-        <div class="muted">${esc(r.explain)}</div>`}
-    </div>`).join("");
-  const el = $("exam-report");
-  el.innerHTML = `<div class="card"><h2>📝 Exam results: ${s.correct}/${s.count} correct · ${s.score}/${s.total} pts (${pct}%)</h2>
-    <div class="muted">Time: ${mins}m ${secs}s</div>${items}
-    <div class="actions"><div class="spacer"></div><button class="primary" id="report-close">Back to practice</button></div></div>`;
-  el.hidden = false;
-  $("practice").hidden = true;
-  $("report-close").onclick = () => { el.hidden = true; $("practice").hidden = false; };
-  window.scrollTo(0, 0);
+  const m = Math.floor(s.seconds / 60), sec = s.seconds % 60;
+  $("report").innerHTML = `
+    <h2>${s.correct} of ${s.count} correct</h2>
+    <div class="sub">${s.score} / ${s.total} pts · ${pct}% · ${m}m ${String(sec).padStart(2, "0")}s</div>
+    ${s.results.map((r) => `
+      <div class="ritem">
+        <div class="rm"><span class="${r.passed ? "ok" : "no"}">${r.passed ? "✓" : "✗"}</span>
+          <span>question ${r.index + 1} · level ${r.difficulty} · ${esc(r.topic)} · ${r.points} pts</span></div>
+        <p class="rq">${esc(r.question)}</p>
+        ${r.passed ? "" : `
+          <div class="lbl">Your answer</div><pre>${esc(r.sql || "(blank)")}</pre>
+          <div class="msg">${esc(r.message)}</div>
+          ${r.ai_comment ? `<div class="ai"><span class="tag">AI</span><span class="txt">${esc(r.ai_comment)}</span></div>`
+            : r.tip ? `<div class="why">${esc(r.tip)}</div>` : ""}
+          <div class="lbl">Answer</div><pre>${esc(r.answer)}</pre>
+          <div class="why">${esc(r.explain)}</div>`}
+      </div>`).join("")}
+    <div class="next-hint" style="margin-left:0"><button id="report-back">back to practice</button><kbd>↵</kbd></div>`;
+  $("report-back").onclick = backToPractice;
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function backToPractice() {
+  mode = "practice";
+  $("out").innerHTML = ""; setEditor("");
+  renderAll();
+  ta().focus();
 }
 
 // ------------------------------------------------------------------ wiring
-function editorKeys(ta, onRun) {
-  ta.addEventListener("keydown", (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); onRun(); }
-    else if (e.key === "Tab") {
+function wire() {
+  const t = ta();
+  t.addEventListener("input", syncEditor);
+  t.addEventListener("keydown", (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); run(); return; }
+    if (e.key === "Tab") {
       e.preventDefault();
-      const s = ta.selectionStart;
-      ta.value = ta.value.slice(0, s) + "    " + ta.value.slice(ta.selectionEnd);
-      ta.selectionStart = ta.selectionEnd = s + 4;
+      insert("    ");
     }
   });
-}
+  window.addEventListener("resize", syncEditor);
 
-function wire() {
-  editorKeys($("sql"), runAndGrade);
-  editorKeys($("exam-sql"), examSave);
-  $("run-btn").onclick = runAndGrade;
-  $("hint-btn").onclick = hint;
-  $("answer-btn").onclick = giveUp;
-  $("next-btn").onclick = nextLevel;
+  document.addEventListener("keydown", (e) => {
+    if (!$("sheet").hidden) return;
+    if (e.altKey && !e.metaKey && !e.ctrlKey) {
+      const map = mode === "exam"
+        ? { ArrowLeft: "prev", ArrowRight: "next" }
+        : { KeyH: "hint", KeyA: "answer", KeyS: "skip" };
+      const a = map[e.code];
+      if (a) { e.preventDefault(); act(a); return; }
+    }
+    if (e.key === "Enter" && document.activeElement !== t && !e.metaKey && !e.ctrlKey) {
+      if (mode === "report") { e.preventDefault(); backToPractice(); }
+      else if (mode === "practice" && passed) { e.preventDefault(); nextLevel(); }
+    }
+    if (e.key === "/" && document.activeElement !== t && mode !== "report") { e.preventDefault(); t.focus(); }
+  });
+
+  $("run-btn").onclick = run;
   $("world").onchange = async (e) => {
-    toast("Switching world…");
-    S = await api("world", { slug: e.target.value });
-    clearFeedback(); $("sql").value = ""; renderAll();
+    toast("Switching world", { ms: 0, spin: true });
+    try {
+      S = await api("world", { slug: e.target.value });
+      passed = false; $("out").innerHTML = ""; setEditor(""); $("term").classList.remove("ok");
+      $("schema").innerHTML = "";
+      renderAll();
+    } finally { untoast(); }
   };
   $("topic").onchange = async (e) => {
     S = await api("topic", { topic: e.target.value || null });
-    if (e.target.value) { clearFeedback(); $("sql").value = ""; }
+    if (e.target.value) { passed = false; $("out").innerHTML = ""; setEditor(""); $("term").classList.remove("ok"); }
     renderAll();
   };
   $("exam-btn").onclick = startExam;
-  $("exam-save").onclick = examSave;
-  $("exam-prev").onclick = () => { saveExamDraft(); examIndex = Math.max(0, examIndex - 1); renderExam(); };
-  $("exam-next").onclick = () => { saveExamDraft(); examIndex = Math.min(S.exam.questions.length - 1, examIndex + 1); renderExam(); };
   $("exam-submit").onclick = () => submitExam(false);
-  $("exam-quit").onclick = async () => {
-    if (!confirm("Abandon this exam?")) return;
-    clearInterval(timerHandle);
+  $("exam-quit").onclick = () => confirmSheet("Abandon exam?", "Your answers won't be graded.", "Abandon", async () => {
+    clearInterval(timer);
     S = await api("exam/quit", {});
+    mode = "practice"; $("out").innerHTML = ""; setEditor("");
     renderAll();
-  };
-  $("newworld-btn").onclick = () => {
-    modal(`<h3>✨ New AI world</h3><p>Describe a theme (or leave blank for a surprise). Takes about a minute.</p>
-      <input id="theme" placeholder="e.g. a coffee shop, a football league, a zoo">`, async () => {
+  });
+  $("newworld-btn").onclick = () => sheet({
+    html: `<h3>New world</h3><p>Describe a theme, or leave it blank for a surprise. The AI designs the tables
+      and data, then psqlay checks them before you play. Takes about a minute.</p>
+      <input id="theme" placeholder="a coffee shop, a football league, a zoo…" autocomplete="off">`,
+    ok: "Create",
+    onOpen: () => setTimeout(() => $("theme").focus(), 50),
+    onOk: async () => {
       const theme = $("theme").value.trim() || null;
-      toast("🤖 Designing your world… (about a minute)", 120000);
+      toast("Designing your world", { ms: 0, spin: true });
       try {
         const out = await api("newworld", { theme });
-        S = out.state;
-        $("toast").hidden = true;
-        renderAll();
-        toast(`New world: ${out.world.emoji} ${out.world.name}. Pick it from the World menu.`, 6000);
-      } catch (e) { toast("Couldn't build a world: " + e.message, 7000); }
-    });
-    $("modal-close").textContent = "Create";
-  };
+        S = out.state; renderAll();
+        toast(`${out.world.emoji} ${out.world.name} is ready. Pick it from the world menu.`, { ms: 6000 });
+      } catch (e) { toast("Couldn't build a world: " + e.message, { ms: 7000 }); }
+    },
+  });
 }
 
 wire();
-refresh().catch((e) => toast(e.message, 8000));
+refresh().then(() => ta().focus()).catch((e) => toast(e.message, { ms: 8000 }));

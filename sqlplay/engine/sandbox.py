@@ -49,6 +49,8 @@ class QueryResult:
     rows: list[tuple] = field(default_factory=list)
     error: QueryError | None = None
     truncated: bool = False
+    display: list[tuple] = field(default_factory=list)   # psql-formatted strings (None = NULL)
+    numeric: list[bool] = field(default_factory=list)    # per column: right-align?
 
     @property
     def ok(self) -> bool:
@@ -71,6 +73,19 @@ def _plain(v):
     if isinstance(v, memoryview):
         return bytes(v).hex()
     return v
+
+
+def _disp(v):
+    """Format a value the way psql prints it."""
+    if v is None:
+        return None
+    if isinstance(v, bool):
+        return "t" if v else "f"
+    if isinstance(v, decimal.Decimal):
+        return format(v, "f")
+    if isinstance(v, (dt.date, dt.datetime, dt.time)):
+        return v.isoformat(sep=" ") if isinstance(v, dt.datetime) else v.isoformat()
+    return str(v)
 
 
 def check_statement(sql: str) -> QueryError | None:
@@ -121,7 +136,13 @@ def run(db: Database, world_slug: str, sql: str, limit: int = ROW_LIMIT) -> Quer
                 result.columns = [d.name for d in cur.description]
                 rows = cur.fetchmany(limit + 1)
                 result.truncated = len(rows) > limit
-                result.rows = [tuple(_plain(v) for v in r) for r in rows[:limit]]
+                rows = rows[:limit]
+                result.rows = [tuple(_plain(v) for v in r) for r in rows]
+                result.display = [tuple(_disp(v) for v in r) for r in rows]
+                result.numeric = [
+                    any(isinstance(r[i], (int, float, decimal.Decimal)) and not isinstance(r[i], bool) for r in rows)
+                    for i in range(len(result.columns))
+                ]
                 raise _Rollback
         except _Rollback:
             pass

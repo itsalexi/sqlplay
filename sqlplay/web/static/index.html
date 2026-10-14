@@ -3,119 +3,104 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
 <title>psqlay</title>
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<header class="topbar">
-  <div class="brand">psqlay</div>
-  <label class="field">World
-    <select id="world"></select>
-  </label>
-  <label class="field">Practice
-    <select id="topic"></select>
-  </label>
-  <div class="spacer"></div>
-  <div class="stat"><span class="k">Score</span><span id="score" class="v">0</span></div>
-  <div class="stat"><span class="k">Streak</span><span id="streak" class="v">🔥 0</span></div>
-  <span id="ai-badge" class="badge"></span>
-  <button id="newworld-btn" class="ghost" title="Invent a new world with AI">✨ New world</button>
-  <button id="exam-btn" class="accent">📝 Exam</button>
+
+<header class="bar" id="bar">
+  <div class="brand">psqlay<span class="cursor"></span></div>
+
+  <nav class="crumbs">
+    <label class="pick" title="World">
+      <span class="pick-emoji" id="world-emoji"></span>
+      <select id="world" aria-label="World"></select>
+      <svg viewBox="0 0 10 6" aria-hidden="true"><path d="M1 1l4 4 4-4"/></svg>
+    </label>
+    <span class="sep">/</span>
+    <label class="pick" title="What to practise">
+      <select id="topic" aria-label="Practice mode"></select>
+      <svg viewBox="0 0 10 6" aria-hidden="true"><path d="M1 1l4 4 4-4"/></svg>
+    </label>
+  </nav>
+
+  <div class="grow"></div>
+
+  <div class="stats">
+    <div class="stat"><span class="num" id="score">0</span><span class="lbl">score</span></div>
+    <div class="stat"><span class="num" id="streak">0</span><span class="lbl">streak</span></div>
+  </div>
+  <span class="ai-dot" id="ai-dot"><i></i><span>AI</span></span>
+  <button class="link" id="newworld-btn">New world</button>
+  <button class="pill" id="exam-btn">Exam</button>
 </header>
 
-<div class="layout">
-  <aside class="sidebar">
-    <section>
-      <h3>Tables</h3>
+<header class="bar exam-bar" id="exam-bar" hidden>
+  <div class="brand">exam<span class="cursor"></span></div>
+  <div class="exam-dots" id="exam-dots"></div>
+  <div class="grow"></div>
+  <span class="timer" id="exam-timer"></span>
+  <button class="link" id="exam-quit">Abandon</button>
+  <button class="pill" id="exam-submit">Submit</button>
+</header>
+
+<div class="app">
+  <aside class="rail" id="rail">
+    <div class="rail-sec">
+      <h6>Schema</h6>
       <div id="schema"></div>
-    </section>
-    <section>
-      <h3>Join map</h3>
-      <pre id="joinmap" class="joinmap"></pre>
-      <p id="notes" class="notes"></p>
-    </section>
-    <section>
-      <h3>Your levels</h3>
+    </div>
+    <div class="rail-sec">
+      <h6>Join map</h6>
+      <div class="joinmap" id="joinmap"></div>
+      <div class="notes" id="notes"></div>
+    </div>
+    <div class="rail-sec">
+      <h6>Progress</h6>
       <div id="levels"></div>
-    </section>
+    </div>
   </aside>
 
-  <main>
-    <!-- practice -->
-    <div id="practice">
-      <article class="card question">
-        <div class="qhead">
-          <span id="q-level" class="pill"></span>
-          <span id="q-topic" class="muted"></span>
-          <span id="q-source" class="muted"></span>
-          <div class="spacer"></div>
-          <span id="q-points" class="muted"></span>
-        </div>
-        <p id="q-text" class="qtext"></p>
-        <div id="q-reqs" class="reqs"></div>
-        <div id="hints"></div>
-      </article>
-
-      <div class="editor-wrap card">
-        <textarea id="sql" spellcheck="false" placeholder="Write your SQL here.  Ctrl+Enter (⌘+Enter) to run and grade."></textarea>
-        <div class="actions">
-          <button id="run-btn" class="primary">▶ Run &amp; grade <kbd>⌘↵</kbd></button>
-          <button id="hint-btn">💡 Hint</button>
-          <button id="answer-btn">🏳 Give up</button>
-          <div class="spacer"></div>
-          <button id="next-btn">Skip ⏭</button>
-        </div>
+  <main class="stage" id="stage">
+    <section class="q" id="q">
+      <div class="meta">
+        <span class="dots" id="q-dots"></span>
+        <span id="q-meta"></span>
       </div>
+      <p class="qtext" id="q-text"></p>
+      <dl class="reqs" id="q-reqs"></dl>
+      <div class="hints" id="hints"></div>
+    </section>
 
-      <div id="feedback"></div>
-      <div id="result" class="result"></div>
-    </div>
-
-    <!-- exam -->
-    <div id="exam" hidden>
-      <div class="card examhead">
-        <strong>📝 Exam</strong>
-        <div id="exam-nav" class="exam-nav"></div>
-        <div class="spacer"></div>
-        <span id="exam-timer" class="timer"></span>
-        <button id="exam-submit" class="accent">Submit exam</button>
-        <button id="exam-quit" class="ghost">Abandon</button>
+    <section class="term" id="term">
+      <div class="term-body">
+        <div class="gutter" id="gutter" aria-hidden="true"></div>
+        <textarea id="sql" spellcheck="false" autocapitalize="off" autocomplete="off" rows="3" wrap="off"
+          placeholder="SELECT …"></textarea>
       </div>
-      <article class="card question">
-        <div class="qhead">
-          <span id="eq-level" class="pill"></span>
-          <span id="eq-num" class="muted"></span>
-          <div class="spacer"></div>
-          <span id="eq-points" class="muted"></span>
-        </div>
-        <p id="eq-text" class="qtext"></p>
-        <div id="eq-reqs" class="reqs"></div>
-      </article>
-      <div class="editor-wrap card">
-        <textarea id="exam-sql" spellcheck="false" placeholder="Your answer. Ctrl+Enter saves it and shows your rows (not whether it's right)."></textarea>
-        <div class="actions">
-          <button id="exam-save" class="primary">💾 Save &amp; preview <kbd>⌘↵</kbd></button>
-          <button id="exam-prev">← Prev</button>
-          <button id="exam-next">Next →</button>
-          <div class="spacer"></div>
-          <span id="exam-saved" class="muted"></span>
-        </div>
+      <div class="term-foot">
+        <div class="keys" id="keys"></div>
+        <div class="grow"></div>
+        <button class="run" id="run-btn">Run <kbd>⌘↵</kbd></button>
       </div>
-      <div id="exam-result" class="result"></div>
-    </div>
+    </section>
 
-    <!-- exam results -->
-    <div id="exam-report" hidden></div>
+    <section class="out" id="out"></section>
+    <section class="report" id="report" hidden></section>
   </main>
 </div>
 
-<div id="modal" class="modal" hidden>
-  <div class="modal-box">
-    <div id="modal-body"></div>
-    <div class="actions"><div class="spacer"></div><button id="modal-close" class="primary">Got it</button></div>
+<div class="sheet-wrap" id="sheet" hidden>
+  <div class="sheet" role="dialog" aria-modal="true">
+    <div id="sheet-body"></div>
+    <div class="sheet-actions">
+      <button class="link" id="sheet-cancel">Cancel</button>
+      <button class="pill" id="sheet-ok">OK</button>
+    </div>
   </div>
 </div>
-<div id="toast" class="toast" hidden></div>
+<div class="toast" id="toast" hidden></div>
 
 <script src="/static/app.js"></script>
 </body>

@@ -121,7 +121,7 @@ class Shell:
         if not res.ok:
             console.print(Text(res.error.psql_text(res.sql), style="red"))
             return
-        console.print(psql_table(res.columns, res.rows, res.truncated))
+        console.print(psql_table(res.columns, res.display, res.truncated, res.numeric))
 
     # ---------------------------------------------------------------- input
     def read_statement(self, prompt: str) -> str | None:
@@ -259,7 +259,7 @@ class Shell:
             console.print(Panel(a["answer"], title="Answer", border_style="yellow"))
             console.print(wrap(a["explain"]))
             console.print()
-            console.print(psql_table(a["columns"], a["rows"]))
+            console.print(psql_table(a["columns"], a["rows"], numeric=a["numeric"]))
             console.print("[dim]\\skip for the next level.[/]")
         elif cmd == "\\level":
             if len(args) == 2:
