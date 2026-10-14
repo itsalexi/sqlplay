@@ -24,6 +24,8 @@ pizza-# ...;
   level 4 is the hardest exam questions, and level 5 goes beyond the exam. You can also lock one
   topic to drill it.
 - **Expected output shown under every question**, like an HOA handout. You can hide it for harder practice.
+- **Expected output** appears under every question, like an HOA handout. You can hide it for harder
+  practice.
 - **Exam mode:** 10 mixed questions, no hints, an optional timer, and a full breakdown at the end.
 - **Feedback that teaches:** plain-English explanations of Postgres errors, plus checks for "too many
   rows: did you forget DISTINCT?", wrong sort order, and wrong labels.
