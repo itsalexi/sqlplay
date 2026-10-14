@@ -28,6 +28,9 @@ class Verdict:
     result: QueryResult | None = None
     expected_columns: list[str] = field(default_factory=list)
     expected_rows: int = 0
+    missing: list[tuple] = field(default_factory=list)   # expected rows you didn't return (display form)
+    extra: list[tuple] = field(default_factory=list)     # rows you returned that shouldn't be there
+    expected_numeric: list[bool] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         r = self.result
@@ -38,6 +41,9 @@ class Verdict:
             "tip": self.tip,
             "expected_columns": self.expected_columns,
             "expected_rows": self.expected_rows,
+            "missing": [list(r) for r in self.missing],
+            "extra": [list(r) for r in self.extra],
+            "expected_numeric": self.expected_numeric,
             "result": None
             if r is None
             else {
@@ -199,6 +205,14 @@ def _row_feedback(user: list[tuple], exp: list[tuple], user_sql: str = "") -> tu
             "Check the filter and which columns you're selecting.",
         )
     # same count, different content
+    wrong = sum((cu - ce).values())
+    if wrong < nu:
+        return (
+            f"Right number of rows ({nu}), but {wrong} of them {'is' if wrong == 1 else 'are'} wrong.",
+            "Compare the missing and extra rows below: is a filter value off by one, or is a "
+            "comparison > when it should be >=?" if wrong <= 2 else
+            "Some rows are right and some aren't. Check your WHERE conditions and join columns.",
+        )
     ncols = len(exp[0]) if exp else 0
     for i in range(ncols):
         if Counter(r[i] for r in user) != Counter(r[i] for r in exp):
@@ -220,6 +234,22 @@ def _row_feedback(user: list[tuple], exp: list[tuple], user_sql: str = "") -> tu
     )
 
 
+def _row_diff(u, e, u_disp, e_disp, limit: int = 8) -> tuple[list[tuple], list[tuple]]:
+    """Rows expected but missing, and rows returned but not expected (multiset difference)."""
+    need = Counter(u) - Counter(e)   # extra
+    want = Counter(e) - Counter(u)   # missing
+    missing, extra = [], []
+    for row, disp in zip(e, e_disp):
+        if want[row] > 0 and len(missing) < limit:
+            missing.append(disp)
+            want[row] -= 1
+    for row, disp in zip(u, u_disp):
+        if need[row] > 0 and len(extra) < limit:
+            extra.append(disp)
+            need[row] -= 1
+    return missing, extra
+
+
 # ---------------------------------------------------------------- main entry
 _expected_cache: dict[str, QueryResult] = {}
 
@@ -237,7 +267,8 @@ def expected_result(db: Database, level: Level) -> QueryResult:
 def grade(db: Database, level: Level, user_sql: str) -> Verdict:
     exp = expected_result(db, level)
     res = sandbox.run(db, level.world, user_sql)
-    base = dict(result=res, expected_columns=level.columns or exp.columns, expected_rows=len(exp.rows))
+    base = dict(result=res, expected_columns=level.columns or exp.columns, expected_rows=len(exp.rows),
+                expected_numeric=exp.numeric)
 
     if not res.ok:
         tip = explain_error(res.error, res.sql)
@@ -260,7 +291,10 @@ def grade(db: Database, level: Level, user_sql: str) -> Verdict:
             msg, tip = "Too many rows (over 500).", "Check your join conditions: every row is pairing with every row."
         else:
             msg, tip = _row_feedback(u, e, user_sql)
-        return Verdict(False, "rows", msg, tip, **base)
+        # Only show a row-by-row diff when the answer is partly right; otherwise it's noise.
+        overlap = sum((Counter(u) & Counter(e)).values())
+        missing, extra = _row_diff(u, e, res.display, exp.display) if overlap else ([], [])
+        return Verdict(False, "rows", msg, tip, missing=missing, extra=extra, **base)
 
     if level.ordered:
         keys = _order_keys(level.answer, exp.columns)

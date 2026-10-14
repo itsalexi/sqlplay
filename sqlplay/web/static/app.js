@@ -76,6 +76,16 @@ function psqlTable(columns, rows, truncated, numeric) {
   return `<pre class="table"><span class="h"> ${head}</span>\n<span class="rule">-${rule}-</span>\n${body}${n ? "\n" : ""}<span class="foot">${foot}</span></pre>`;
 }
 
+function diffHTML(v) {
+  const parts = [];
+  const res = v.result || {};
+  if (v.missing && v.missing.length)
+    parts.push(`<div class="lbl miss">missing · expected but not in yours</div>${psqlTable(v.expected_columns, v.missing, false, v.expected_numeric).replace(/<span class="foot">.*?<\/span>/, "")}`);
+  if (v.extra && v.extra.length && res.columns)
+    parts.push(`<div class="lbl extra">extra · yours but not expected</div>${psqlTable(res.columns, v.extra, false, res.numeric).replace(/<span class="foot">.*?<\/span>/, "")}`);
+  return parts.length ? `<div class="diff">${parts.join("")}</div>` : "";
+}
+
 function resultHTML(res) {
   if (!res) return "";
   if (res.error) return `<pre class="err">${esc(res.error)}</pre>`;
@@ -84,6 +94,20 @@ function resultHTML(res) {
 
 // ------------------------------------------------------------------ editor
 const ta = () => $("sql");
+const hist = { list: JSON.parse(localStorage.getItem("psqlay.history") || "[]"), i: -1, draft: "" };
+function remember(sql) {
+  sql = sql.trim();
+  if (!sql) return;
+  hist.list = [sql, ...hist.list.filter((q) => q !== sql)].slice(0, 100);
+  localStorage.setItem("psqlay.history", JSON.stringify(hist.list));
+  hist.i = -1;
+}
+function historyStep(dir) {
+  if (!hist.list.length) return;
+  if (hist.i === -1) hist.draft = ta().value;
+  hist.i = Math.max(-1, Math.min(hist.list.length - 1, hist.i + dir));
+  setEditor(hist.i === -1 ? hist.draft : hist.list[hist.i]);
+}
 
 function promptName() {
   const slug = (S && (S.exam ? S.exam.world : S.status.world.slug)) || "psqlay";
@@ -114,7 +138,8 @@ function renderKeys() {
     k.innerHTML = `
       <button data-act="hint" ${used >= total ? "disabled" : ""}><kbd>${ALT}H</kbd>hint ${used}/${total}</button>
       <button data-act="answer"><kbd>${ALT}A</kbd>give up</button>
-      <button data-act="skip"><kbd>${ALT}S</kbd>skip</button>`;
+      <button data-act="skip"><kbd>${ALT}S</kbd>skip</button>
+      <button data-act="hist" title="previous queries"><kbd>${ALT}↑↓</kbd>history</button>`;
     $("run-btn").innerHTML = `Run <kbd>${MOD}↵</kbd>`;
   }
   k.querySelectorAll("[data-act]").forEach((b) => (b.onclick = () => act(b.dataset.act)));
@@ -122,7 +147,7 @@ function renderKeys() {
 
 function act(a) {
   ({
-    hint, answer: giveUp, skip: nextLevel,
+    hint, answer: giveUp, skip: nextLevel, hist: () => historyStep(1),
     prev: () => examGo(examIndex - 1), next: () => examGo(examIndex + 1),
   })[a]?.();
 }
@@ -142,7 +167,7 @@ function renderBar() {
   bump("score", st.score);
   bump("streak", st.streak);
   const dot = $("ai-dot");
-  dot.className = "ai-dot" + (st.ai ? " on" : "");
+  dot.className = "ai-dot" + (st.ai && (st.ai_feedback || st.ai_levels) ? " on" : "");
   dot.title = S.models ? `generate: ${S.models.generate}\nfeedback: ${S.models.feedback}` : "Add OPENAI_API_KEY to .env to enable AI";
   $("newworld-btn").hidden = !st.ai;
   $("world-emoji").textContent = st.world.emoji || "";
@@ -180,6 +205,11 @@ function renderRail() {
   $("joinmap").innerHTML = joinMapHTML(S.join_map || "");
   const notes = (S.notes || "").trim();
   $("notes").innerHTML = notes ? `<details><summary>data notes</summary><div>${esc(notes)}</div></details>` : "";
+  const ss = S.status.session;
+  if (ss && (ss.attempts || ss.missed)) {
+    const mins = Math.max(1, Math.round((Date.now() / 1000 - ss.started) / 60));
+    $("session").innerHTML = `this session · <b>${ss.passed}</b> solved · ${ss.missed} missed · <b>+${ss.points}</b> pts · ${mins} min`;
+  } else $("session").innerHTML = "";
   $("levels").innerHTML = S.status.topics.map((t) => `
     <div class="lv ${t.unlocked ? "" : "locked"}" title="${t.unlocked ? `${t.passed} passed of ${t.attempted}` : "unlocks after 3 aggregate passes"}">
       <span class="name">${esc(t.name.toLowerCase())}</span><span class="val">L${t.difficulty}</span>
@@ -241,6 +271,7 @@ function renderPractice() {
   if (!lv) return;
   const src = { generated: " · generated", ai: " · ai" }[lv.source] || "";
   renderQuestion(lv, `level ${lv.difficulty} · ${lv.topic_name.toLowerCase()} · ${lv.points} pts${src}`);
+  if (lv.review) $("q-meta").insertAdjacentHTML("beforeend", ` · <span class="review">review: you missed this one before</span>`);
   $("hints").innerHTML = lv.hints_used.map((h, i) => `<div class="hint"><b>hint ${i + 1}</b>${esc(h)}</div>`).join("");
   renderKeys();
   if (lv.groupby_intro) {
@@ -287,6 +318,7 @@ async function run() {
   if (!sql) return;
   if (passed) { /* re-running after a pass is fine */ }
   lastSQL = sql;
+  remember(sql);
   $("run-btn").disabled = true;
   try {
     const out = await api("submit", { sql });
@@ -312,7 +344,7 @@ async function run() {
         ${table}`;
       $("next-inline").onclick = nextLevel;
       ta().blur();
-      if (S.status.ai) {
+      if (S.status.ai_feedback) {
         api("pass_tip", { sql }).then((r) => {
           if (r.text && $("ai-slot")) $("ai-slot").innerHTML = `<div class="ai"><span class="tag">AI</span><span class="txt">${esc(r.text)}</span></div>`;
         }).catch(() => {});
@@ -323,9 +355,10 @@ async function run() {
       $("out").innerHTML = `
         <div class="verdict no"><span class="sym">✗</span><span>${esc(v.message)}</span></div>
         ${v.tip ? `<div class="tip">${esc(v.tip)}</div>` : ""}
-        ${S.status.ai ? `<div class="ai loading" id="ai-line"><span class="tag">AI</span><span class="txt">…</span></div>` : ""}
+        ${S.status.ai_feedback ? `<div class="ai loading" id="ai-line"><span class="tag">AI</span><span class="txt">…</span></div>` : ""}
+        ${diffHTML(v)}
         ${table}`;
-      if (S.status.ai) {
+      if (S.status.ai_feedback) {
         api("tutor", { sql }).then((r) => {
           const el = $("ai-line");
           if (!el || lastSQL !== sql) return;
@@ -333,8 +366,25 @@ async function run() {
         }).catch(() => $("ai-line")?.remove());
       }
     }
+    revealOut();
   } catch (e) { toast(e.message, { ms: 5000 }); }
   finally { $("run-btn").disabled = false; }
+}
+
+function revealOut() {
+  const r = $("out").getBoundingClientRect();
+  if (r.top > window.innerHeight - 120) window.scrollBy({ top: r.top - window.innerHeight / 3, behavior: "smooth" });
+}
+
+async function tryRun() {
+  const sql = ta().value.trim();
+  if (!sql) return;
+  remember(sql);
+  try {
+    const res = await api("run", { sql });
+    setTimeout(revealOut, 0);
+    $("out").innerHTML = `<div class="verdict info"><span class="sym">›</span><span>tried</span><span class="extra">not graded · ${MOD}↵ to ${mode === "exam" ? "save" : "answer"}</span></div>${resultHTML(res)}`;
+  } catch (e) { toast(e.message, { ms: 5000 }); }
 }
 
 async function nextLevel() {
@@ -517,12 +567,44 @@ function backToPractice() {
   ta().focus();
 }
 
+function aiSettings() {
+  const st = S.status;
+  if (!st.ai) {
+    sheet({ html: `<h3>AI is off</h3><p>Add <code>OPENAI_API_KEY=…</code> to the <code>.env</code> file in the psqlay folder
+      and restart to enable AI feedback and AI-written levels. Everything else works without it.</p>`, ok: "OK", cancel: null });
+    return;
+  }
+  const row = (key, title, desc) => `
+    <div class="toggle-row" data-key="${key}">
+      <span class="t">${title}</span><button class="switch ${st[key] ? "on" : ""}" aria-label="${title}"></button>
+      <span class="d">${desc}</span>
+    </div>`;
+  sheet({
+    html: `<h3>AI</h3>
+      ${row("ai_feedback", "Feedback", "Tutor nudges when you're wrong, tips when you're right. About $0.001 each.")}
+      ${row("ai_levels", "AI-written levels", "New exam-style levels made in the background. About $0.01 each.")}
+      <p style="margin:14px 0 0;font-size:12px">${S.models ? `models · ${esc(S.models.generate)} / ${esc(S.models.feedback)}` : ""}</p>`,
+    ok: "Done", cancel: null,
+    onOpen: () => document.querySelectorAll(".toggle-row").forEach((r) => {
+      r.querySelector(".switch").onclick = async (e) => {
+        const on = !e.currentTarget.classList.contains("on");
+        e.currentTarget.classList.toggle("on", on);
+        S = await api("setting", { key: r.dataset.key, on });
+        renderBar();
+      };
+    }),
+  });
+}
+
 // ------------------------------------------------------------------ wiring
 function wire() {
   const t = ta();
   t.addEventListener("input", syncEditor);
   t.addEventListener("keydown", (e) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); run(); return; }
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); e.shiftKey ? tryRun() : run(); return; }
+    if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown") && mode === "practice") {
+      e.preventDefault(); historyStep(e.key === "ArrowUp" ? 1 : -1); return;
+    }
     if (e.key === "Tab") {
       e.preventDefault();
       insert("    ");
@@ -547,6 +629,8 @@ function wire() {
   });
 
   $("run-btn").onclick = run;
+  $("try-btn").onclick = tryRun;
+  $("ai-dot").onclick = aiSettings;
   $("world").onchange = async (e) => {
     toast("Switching world", { ms: 0, spin: true });
     try {

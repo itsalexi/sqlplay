@@ -78,7 +78,14 @@ class Database:
 
     # -- connections -------------------------------------------------------
     def connect(self, role: str, dbname: str = DBNAME, autocommit: bool = True) -> psycopg.Connection:
-        return psycopg.connect(self.cluster.conninfo(role, dbname), autocommit=autocommit)
+        try:
+            return psycopg.connect(self.cluster.conninfo(role, dbname), autocommit=autocommit)
+        except psycopg.OperationalError:
+            # The private server was stopped (e.g. `psqlay stop` from another window): restart it.
+            if self.cluster.running():
+                raise
+            self.cluster.start()
+            return psycopg.connect(self.cluster.conninfo(role, dbname), autocommit=autocommit)
 
     @contextmanager
     def app(self) -> Iterator[psycopg.Connection]:

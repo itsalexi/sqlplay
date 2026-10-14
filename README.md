@@ -28,7 +28,11 @@ pizza-# ...;
   practice.
 - **Exam mode:** 10 mixed questions, no hints, an optional timer, and a full breakdown at the end.
 - **Feedback that teaches:** plain-English explanations of Postgres errors, plus checks for "too many
-  rows: did you forget DISTINCT?", wrong sort order, and wrong labels.
+  rows: did you forget DISTINCT?", wrong sort order, and wrong labels. When your answer is partly
+  right, it shows exactly **which rows are missing and which are extra**.
+- **Review:** levels you gave up on or skipped come back later for another try.
+- **Try queries freely:** run a query without grading it, use tab completion and query history, and see
+  a session summary when you quit.
 - **Optional AI** (OpenAI key): a tutor that tells you what to reconsider without giving the answer,
   new AI-written levels, and whole new themed worlds.
 - **Safe:** your queries run as a read-only user with a time limit. AI-generated SQL is parsed and
@@ -60,6 +64,8 @@ Terminal commands (psql-style):
 | Command | What it does |
 |---|---|
 | SQL ending in `;` | Run your query and grade it |
+| SQL ending in `\g` | Just run it, without grading (for trying things out) |
+| `Tab` | Complete table and column names |
 | `\hint` | Show the next hint (3 per level, each costs 2 points) |
 | `\skip` | Skip to a new question |
 | `\answer` | Give up and see the answer with an explanation |
@@ -70,10 +76,12 @@ Terminal commands (psql-style):
 | `\exam [minutes]` | Start a mock exam |
 | `\score` | Show your progress |
 | `\expected on|off` | Show or hide the expected output under each question |
+| `\ai`, `\ai feedback on|off`, `\ai levels on|off` | AI settings (saved between sessions) |
 | `\q` | Quit (progress is saved) |
 
-In the browser: `⌘↵` runs your query, `⌥H` shows a hint, `⌥A` gives up, `⌥S` skips, and `↵` moves to
-the next level after you pass.
+In the browser: `⌘↵` runs and grades your query, `⇧⌘↵` just runs it, `⌥↑`/`⌥↓` steps through your past
+queries, `⌥H` shows a hint, `⌥A` gives up, `⌥S` skips, and `↵` moves to the next level after you pass.
+Click **AI** in the top bar to switch AI feedback or AI-written levels on or off.
 
 Other commands: `psqlay doctor`, `psqlay stop` (stops the private Postgres), `psqlay reset` (clears
 your progress).

@@ -42,6 +42,11 @@ class ToggleBody(BaseModel):
     on: bool
 
 
+class SettingBody(BaseModel):
+    key: str
+    on: bool
+
+
 class ExamStartBody(BaseModel):
     minutes: int | None = None
 
@@ -87,6 +92,7 @@ def create_app(game: Game, port: int = 8000) -> FastAPI:
         d["passed"] = game.passed
         d["groupby_intro"] = game.groupby_intro() if game.needs_groupby_intro() else None
         d["expected"] = game.expected(lv)
+        d["review"] = game.is_review
         return d
 
     def exam_payload() -> dict | None:
@@ -205,6 +211,15 @@ def create_app(game: Game, port: int = 8000) -> FastAPI:
     def set_expected(body: ToggleBody):
         with lock:
             game.set_show_expected(body.on)
+            return state()
+
+    @app.post("/api/setting")
+    def set_setting(body: SettingBody):
+        with lock:
+            try:
+                game.set_setting(body.key, body.on)
+            except ValueError as e:
+                raise HTTPException(400, str(e))
             return state()
 
     @app.post("/api/newworld")

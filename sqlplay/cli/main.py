@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import difflib
 import sys
+import time
 import textwrap
 import time
 
 from prompt_toolkit import PromptSession
+from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.lexers import PygmentsLexer
 from pygments.lexers.sql import PostgresLexer
@@ -27,7 +30,8 @@ ACC, BLUE, AMBER, RED, DIM = "#8be9b0", "#8ec5ff", "#f5c86b", "#ff7a7a", "grey50
 
 HELP = r"""
 [bold]Playing[/]
-  (type SQL, end with ;)   run it and grade it against the current question
+  SQL ending in ;          run it and grade it against the current question
+  SQL ending in \g         just run it (try things out, no grading)
   \hint                    next hint (3 per level, each costs 2 pts)
   \skip                    new question (counts as a skip)
   \answer                  give up: show the answer and why it works
@@ -37,6 +41,7 @@ HELP = r"""
   \dt                      list tables
   \d <table>               show a table's columns
   \map                     show the join map
+  Tab                      complete table and column names
 
 [bold]Choosing what to practise[/]
   \topic                   list topics and your level in each
@@ -44,15 +49,19 @@ HELP = r"""
   \mix                     back to the mix (default)
   \level <topic> <1-5>     set your difficulty in a topic
   \world                   list worlds;  \world <name> to switch
-  \newworld [theme]        AI: invent a new world (needs a key)
+  \newworld \[theme]        AI: invent a new world (needs a key)
 
 [bold]Exam[/]
-  \exam [minutes]          10-question mock HOA, no hints (e.g. \exam 45)
+  \exam \[minutes]          10-question mock HOA, no hints (e.g. \exam 45)
+
+[bold]Settings[/]
+  \expected on|off         expected output under each question
+  \ai                      show AI settings
+  \ai feedback on|off      AI tutor feedback and tips
+  \ai levels on|off        AI-written levels (generated in the background)
 
 [bold]Other[/]
   \score                   your stats
-  \expected on|off         show/hide the expected output under each question
-  \ai on|off               AI feedback on/off (needs a key)
   \help                    this help
   \q                       quit (progress is saved)
 """
@@ -63,9 +72,20 @@ your rows, but not whether it's right). Revise as often as you like.
   \n  or \next             next question          \p or \prev   previous question
   \go <n>                  jump to question n     \list         all questions + status
   \dt  \d <table>  \map    explore as usual       \submit       finish and get graded
+  SQL ending in \g         try a query without saving it as your answer
   \expected on|off         show/hide expected output
   \quit                    abandon the exam
 """
+
+COMMANDS = ["\\hint", "\\skip", "\\answer", "\\level", "\\dt", "\\d", "\\map", "\\topic", "\\mix", "\\world",
+            "\\newworld", "\\exam", "\\expected", "\\ai", "\\score", "\\help", "\\q", "\\next", "\\prev",
+            "\\go", "\\list", "\\submit", "\\quit"]
+ALIASES = {"\\l": "\\world", "\\?": "\\help", "\\h": "\\help", "\\exit": "\\q", "\\giveup": "\\answer", "\\n": "\\next",
+           "\\p": "\\prev", "\\dt+": "\\dt", "\\d+": "\\d"}
+
+SQL_WORDS = """SELECT FROM WHERE AND OR NOT IN IS NULL LIKE ILIKE BETWEEN AS DISTINCT ORDER BY ASC DESC GROUP HAVING
+JOIN INNER LEFT RIGHT FULL OUTER ON USING NATURAL CROSS COUNT SUM AVG MIN MAX ROUND CONCAT UPPER LOWER LIMIT
+EXISTS CASE WHEN THEN ELSE END""".split()
 
 
 def wrap(s: str, indent: int = 2) -> str:
@@ -84,20 +104,42 @@ def ai_line(text: str, indent: int = 2) -> None:
 class Shell:
     def __init__(self, game):
         self.g = game
-        self.ai_on = game.ai_available()
         home_dir().mkdir(parents=True, exist_ok=True)
+        self.completer = WordCompleter([], ignore_case=True, sentence=True)
         self.session = PromptSession(
             history=FileHistory(str(home_dir() / "history")),
             lexer=PygmentsLexer(PostgresLexer),
+            completer=self.completer,
+            complete_while_typing=False,
         )
         self.exam_i = 0
+        self.refresh_completions()
+
+    @property
+    def ai_on(self) -> bool:
+        return self.g.ai_feedback_on()
+
+    def refresh_completions(self) -> None:
+        words = list(SQL_WORDS) + COMMANDS
+        try:
+            for t in self.g.schema():
+                words.append(t["table"])
+                words += [c["name"] for c in t["columns"]]
+        except Exception:  # noqa: BLE001 - completion is best effort
+            pass
+        self.completer.words = sorted(set(words), key=str.lower)
 
     # ---------------------------------------------------------------- display
     def banner(self) -> None:
         st = self.g.status()
         w = st["world"]
         mode = st["locked"] or "mix"
-        ai_txt = "ai on" if (st["ai"] and self.ai_on) else ("ai off" if st["ai"] else "no ai key")
+        if not st["ai"]:
+            ai_txt = "no ai key"
+        elif st["ai_feedback"] or st["ai_levels"]:
+            ai_txt = "ai " + "+".join(k for k, on in (("feedback", st["ai_feedback"]), ("levels", st["ai_levels"])) if on)
+        else:
+            ai_txt = "ai off"
         console.print()
         console.print(
             f"[bold]psqlay[/][{ACC}]▍[/]  [{DIM}]·[/]  {w['emoji']} {w['name']}  [{DIM}]·  {mode}  ·  "
@@ -111,6 +153,8 @@ class Shell:
             console.print(Panel(self.g.groupby_intro(), title="new topic: group by / having",
                                 border_style=DIM, title_align="left"))
         src = {"generated": " · generated", "ai": " · ai"}.get(lv.source, "")
+        if self.g.is_review:
+            src += f"[/] [{AMBER}]· review: you missed this one before[/][{DIM}]"
         dots = f"[{ACC}]" + "●" * lv.difficulty + f"[/][{DIM}]" + "○" * (5 - lv.difficulty) + "[/]"
         console.print()
         console.print(f"  {dots}  [{DIM}]level {lv.difficulty} · {TOPICS.get(lv.topic, lv.topic).lower()} · "
@@ -150,8 +194,8 @@ class Shell:
         console.print(psql_table(res.columns, res.display, res.truncated, res.numeric))
 
     # ---------------------------------------------------------------- input
-    def read_statement(self, prompt: str) -> str | None:
-        """Read lines until ';' (SQL) or a single backslash command line."""
+    def read_statement(self, prompt: str) -> tuple[str, bool] | None:
+        """Read lines until ';' (grade) or '\\g' (just run), or one backslash command line."""
         lines: list[str] = []
         while True:
             p = prompt if not lines else prompt.replace("=#", "-#")
@@ -160,25 +204,27 @@ class Shell:
             except KeyboardInterrupt:
                 if lines:
                     lines = []
-                    console.print("[dim](cleared)[/]")
+                    console.print(f"[{DIM}](cleared)[/]")
                     continue
-                return ""
+                return "", False
             except EOFError:
                 return None
             if not lines and line.strip().startswith("\\"):
-                return line.strip()
+                return line.strip(), False
             lines.append(line)
             text = "\n".join(lines).strip()
             if not text:
                 lines = []
                 continue
-            if text.endswith(";") or text.endswith("\\g"):
-                return text.removesuffix("\\g")
+            if text.endswith("\\g"):
+                return text.removesuffix("\\g").rstrip(), True
+            if text.endswith(";"):
+                return text, False
 
     # ---------------------------------------------------------------- loop
     def run(self) -> None:
         self.banner()
-        console.print(f"[{DIM}]write sql ending in ;  ·  \\hint  \\skip  \\answer  \\exam  \\help[/]")
+        console.print(f"[{DIM}]end with ; to answer · \\g to just run · tab completes · \\help[/]")
         self.show_level()
         while True:
             if self.g.exam:
@@ -192,22 +238,44 @@ class Shell:
                     continue
             else:
                 prompt = f"{self.g.world}=# "
-            stmt = self.read_statement(prompt)
-            if stmt is None:
+            got = self.read_statement(prompt)
+            if got is None:
                 break
+            stmt, try_only = got
             if not stmt:
                 continue
             try:
                 if stmt.startswith("\\"):
                     if self.command(stmt) == "quit":
                         break
+                elif try_only:
+                    self.try_sql(stmt)
                 elif self.g.exam:
                     self.exam_sql(stmt)
                 else:
                     self.answer(stmt)
-            except (ai.AIError, ValueError, RuntimeError) as e:
-                console.print(f"[red]{e}[/]")
-        console.print(f"[{DIM}]bye · progress saved[/]")
+            except KeyboardInterrupt:
+                console.print(f"[{DIM}](cancelled)[/]")
+            except Exception as e:  # noqa: BLE001 - never crash the REPL
+                console.print(f"[{RED}]error:[/] {e}")
+        self.goodbye()
+
+    def goodbye(self) -> None:
+        s = self.g.session
+        mins = int((time.time() - s["started"]) // 60)
+        if s["attempts"] or s["missed"]:
+            console.print(
+                f"[{DIM}]session · {mins} min · {s['passed']} solved · {s['missed']} missed · "
+                f"+{s['points']} pts · progress saved[/]"
+            )
+        else:
+            console.print(f"[{DIM}]bye · progress saved[/]")
+
+    def try_sql(self, sql: str) -> None:
+        """Run without grading (\\g): for exploring data and testing pieces of a query."""
+        res = self.g.run(sql)
+        self.print_result(res)
+        console.print(f"[{DIM}]not graded · end with ; to answer[/]")
 
     # ---------------------------------------------------------------- practice
     def answer(self, sql: str) -> None:
@@ -244,6 +312,16 @@ class Shell:
         console.print(f"[{RED}]✗ {v.message}[/]")
         if v.tip:
             console.print(f"[{DIM}]{wrap(v.tip)}[/]")
+        res = v.result
+        for label, cols, rows, num, style in (
+            ("missing · expected but not in yours", v.expected_columns, v.missing, v.expected_numeric, ACC),
+            ("extra · yours but not expected", res.columns if res else [], v.extra, res.numeric if res else [], RED),
+        ):
+            if rows and cols and len(rows[0]) == len(cols):
+                console.print()
+                console.print(f"  [{style}]{label}[/]")
+                t = psql_table(cols, rows, numeric=num or None).rsplit("\n", 1)[0]
+                console.print(Text(textwrap.indent(t, "  "), style=DIM))
         if self.ai_on:
             try:
                 with console.status(f"[{DIM}]ai thinking · ctrl-c to skip[/]", spinner="dots"):
@@ -265,6 +343,10 @@ class Shell:
     def command(self, line: str):
         parts = line.split()
         cmd, args = parts[0].lower(), parts[1:]
+        if cmd.startswith("\\d") and cmd not in ("\\d", "\\dt", "\\d+", "\\dt+") and len(cmd) > 2 and not args:
+            args, cmd = [cmd[2:]], "\\d"          # psql allows \dcustomer? be forgiving: \d<table>
+        if not (self.g.exam and cmd in ("\\n", "\\p")):
+            cmd = ALIASES.get(cmd, cmd)
         if self.g.exam and cmd in ("\\n", "\\next", "\\p", "\\prev", "\\go", "\\list", "\\submit", "\\quit", "\\help", "\\h", "\\?"):
             return self.exam_command(cmd, args)
         if cmd in ("\\q", "\\quit", "\\exit"):
@@ -324,6 +406,7 @@ class Shell:
                     console.print(f" {mark} {w['emoji']} [bold]{w['slug']}[/] — {w['name']}{tag} ({w['levels']} levels)  [dim]{w['blurb']}[/]")
             else:
                 self.g.set_world(args[0])
+                self.refresh_completions()
                 self.banner()
                 self.next()
         elif cmd == "\\newworld":
@@ -355,13 +438,28 @@ class Shell:
             if on:
                 self.print_expected(self.g.exam.levels[self.exam_i] if self.g.exam else self.g.current())
         elif cmd == "\\ai":
-            if not self.g.ai_available():
-                console.print("[yellow]No OPENAI_API_KEY in .env.[/]")
-            else:
-                self.ai_on = (args[0].lower() != "off") if args else not self.ai_on
-                console.print(f"AI feedback {'on' if self.ai_on else 'off'}.")
+            self.ai_settings(args)
         else:
-            console.print(f"[red]Unknown command {cmd}.[/] \\help lists commands.")
+            near = difflib.get_close_matches(cmd, COMMANDS, n=1, cutoff=0.5)
+            hint = f"did you mean {near[0]}?  " if near else ""
+            console.print(f"[{RED}]unknown command {cmd}[/]  [{DIM}]{hint}\\help lists commands[/]")
+
+    def ai_settings(self, args: list[str]) -> None:
+        if not self.g.ai_available():
+            console.print(f"[{DIM}]no OPENAI_API_KEY in .env · AI features are off[/]")
+            return
+        keys = {"feedback": "ai_feedback", "levels": "ai_levels"}
+        if args:
+            which = [keys[args[0]]] if args[0] in keys else list(keys.values())
+            val = (args[-1].lower() if args[-1].lower() in ("on", "off") else None)
+            for k in which:
+                on = (val != "off") if val else not self.g.setting(k)
+                self.g.set_setting(k, on)
+        fb, lv = self.g.setting("ai_feedback"), self.g.setting("ai_levels")
+        onoff = lambda b: f"[{ACC}]on[/]" if b else f"[{DIM}]off[/]"  # noqa: E731
+        console.print(f"  ai feedback  {onoff(fb)}   [{DIM}]tutor nudges on wrong answers, tips on right ones[/]")
+        console.print(f"  ai levels    {onoff(lv)}   [{DIM}]new AI-written levels, made in the background[/]")
+        console.print(f"  [{DIM}]\\ai feedback on|off · \\ai levels on|off · \\ai on|off for both[/]")
 
     def describe(self, table: str | None) -> None:
         tables = self.g.schema()

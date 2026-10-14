@@ -80,6 +80,8 @@ def stats(db: Database) -> dict:
         "best_streak": int(rows.get("best_streak", 0)),
         "groupby_intro_seen": bool(rows.get("groupby_intro_seen", False)),
         "show_expected": bool(rows.get("show_expected", True)),
+        "ai_feedback": bool(rows.get("ai_feedback", True)),
+        "ai_levels": bool(rows.get("ai_levels", True)),
     }
 
 
@@ -91,9 +93,18 @@ def _set_stat(conn, key: str, value) -> None:
     )
 
 
-def set_show_expected(db: Database, on: bool) -> None:
+SETTINGS = ("show_expected", "ai_feedback", "ai_levels")
+
+
+def set_setting(db: Database, key: str, on: bool) -> None:
+    if key not in SETTINGS:
+        raise ValueError(f"Unknown setting {key}")
     with db.app() as conn:
-        _set_stat(conn, "show_expected", on)
+        _set_stat(conn, key, bool(on))
+
+
+def set_show_expected(db: Database, on: bool) -> None:
+    set_setting(db, "show_expected", on)
 
 
 def mark_groupby_intro_seen(db: Database) -> None:
@@ -178,11 +189,17 @@ def reset(db: Database) -> None:
 
 def seen_level_ids(db: Database, world: str) -> dict[str, bool]:
     """level id -> passed-ever, for levels in this world the player has finished or tried."""
+    return {k: v[0] for k, v in seen_levels(db, world).items()}
+
+
+def seen_levels(db: Database, world: str) -> dict[str, tuple[bool, float]]:
+    """level id -> (passed-ever, seconds since last attempt)."""
     with db.app() as conn:
         rows = conn.execute(
-            """SELECT a.level_id, bool_or(a.passed) FROM sqlplay.attempts a
+            """SELECT a.level_id, bool_or(a.passed), extract(epoch FROM now() - max(a.at))
+               FROM sqlplay.attempts a
                JOIN sqlplay.levels l ON l.id = a.level_id
                WHERE l.world = %s GROUP BY a.level_id""",
             (world,),
         ).fetchall()
-    return dict(rows)
+    return {lid: (bool(passed), float(ago)) for lid, passed, ago in rows}

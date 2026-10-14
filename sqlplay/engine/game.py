@@ -18,6 +18,8 @@ EXAM_PLAN = [3, 3, 3, 4, 4, 4, 4, 4, 5, 5]
 EXAM_TOPICS = ["subqueries", "joins", "selfleft", "subqueries", "joins", "shape", "aggregates", "selfleft",
                "subqueries", "joins"]
 PASS_TIP_CHANCE = 0.35
+REVIEW_AFTER = 15 * 60      # seconds before a missed level can come back
+REVIEW_CHANCE = 0.3
 
 GROUPBY_INTRO = """GROUP BY makes piles, then aggregates squash each pile separately.
 
@@ -112,10 +114,24 @@ class Game:
         self.rng = random.Random()
         self._prefetching: set[tuple[str, str, int]] = set()
         self._prefetch_lock = threading.Lock()
+        self.is_review = False     # current level is a retry of one you missed earlier
+        self.session = {"passed": 0, "attempts": 0, "points": 0, "missed": 0, "started": time.time()}
 
-    # ------------------------------------------------------------ status
+    # ------------------------------------------------------------ status / settings
     def ai_available(self) -> bool:
         return ai.available()
+
+    def setting(self, key: str) -> bool:
+        return progress.stats(self.db)[key]
+
+    def set_setting(self, key: str, on: bool) -> None:
+        progress.set_setting(self.db, key, on)
+
+    def ai_feedback_on(self) -> bool:
+        return self.ai_available() and self.setting("ai_feedback")
+
+    def ai_levels_on(self) -> bool:
+        return self.ai_available() and self.setting("ai_levels")
 
     def status(self) -> dict:
         states = progress.topic_states(self.db)
@@ -131,6 +147,9 @@ class Game:
             "show_expected": st["show_expected"],
             "best_streak": st["best_streak"],
             "ai": self.ai_available(),
+            "ai_feedback": self.ai_available() and st["ai_feedback"],
+            "ai_levels": self.ai_available() and st["ai_levels"],
+            "session": self.session,
             "topics": [
                 {
                     "topic": t,
@@ -195,20 +214,33 @@ class Game:
             worlds.save_level(conn, lv)
 
     def pick(self, topic: str | None = None, difficulty: int | None = None, allow_ai: bool = True,
-             exclude: set[str] | None = None) -> Level:
+             exclude: set[str] | None = None, review: bool = True) -> Level:
         states = progress.topic_states(self.db)
         topic = topic or self.locked or self._choose_topic(states)
         diff = difficulty or states[topic].difficulty
-        seen = progress.seen_level_ids(self.db, self.world)
+        seen_full = progress.seen_levels(self.db, self.world)
+        seen = {k: v[0] for k, v in seen_full.items()}
         exclude = exclude or set()
         stored = [lv for lv in self._stored_levels(topic) if lv.id not in exclude]
         source_rank = {"builtin": 0, "ai": 1, "generated": 2}
+        self.is_review = False
+
+        # Bring back levels you missed (gave up / skipped) after a break, near your level.
+        if review:
+            missed = [
+                lv for lv in stored
+                if lv.id in seen_full and not seen_full[lv.id][0] and seen_full[lv.id][1] > REVIEW_AFTER
+                and abs(lv.difficulty - diff) <= 1 and (not self.level or lv.id != self.level.id)
+            ]
+            if missed and self.rng.random() < REVIEW_CHANCE:
+                self.is_review = True
+                return self.rng.choice(missed)
 
         fresh = [lv for lv in stored if lv.id not in seen]
         exact = [lv for lv in fresh if lv.difficulty == diff and lv.source != "generated"]
         if exact:
             return self.rng.choice(exact)
-        if allow_ai and self.ai_available():
+        if allow_ai and self.ai_levels_on():
             # AI levels are slow to write: make one in the background for next time,
             # and serve an instant level now.
             self._prefetch_ai(topic, diff)
@@ -241,6 +273,7 @@ class Game:
             # skipping counts like giving up for difficulty purposes
             progress.record_result(self.db, self.level, passed=False)
             progress.log_attempt(self.db, self.level, "-- skipped", False, self.hints_used, "practice")
+            self.session["missed"] += 1
         self.level = self.pick(topic)
         self.last_topic = self.level.topic
         self.hints_used = 0
@@ -297,9 +330,12 @@ class Game:
             self._drop_level(lv)
             return {"broken": True, "message": f"This level turned out to be broken and was removed ({e}). Type \\skip."}
         progress.log_attempt(self.db, lv, sql, v.passed, self.hints_used, "practice")
+        self.session["attempts"] += 1
         out: dict = {"verdict": v, "outcome": None, "first_pass": False}
         if v.passed and not self.finished:
             out["outcome"] = progress.record_result(self.db, lv, passed=True, hints_used=self.hints_used)
+            self.session["passed"] += 1
+            self.session["points"] += out["outcome"].points
             out["first_pass"] = True
             self.finished = True
             self.passed = True
@@ -307,7 +343,7 @@ class Game:
 
     def tutor(self, sql: str, verdict: grader.Verdict) -> str:
         """AI nudge for a failed attempt (empty string if unavailable)."""
-        if not self.ai_available() or verdict.passed:
+        if not self.ai_feedback_on() or verdict.passed:
             return ""
         lv = self.current()
         exp = grader.expected_result(self.db, lv)
@@ -322,7 +358,7 @@ class Game:
             return ""
 
     def pass_tip(self, sql: str) -> str:
-        if not self.ai_available() or self.rng.random() > PASS_TIP_CHANCE:
+        if not self.ai_feedback_on() or self.rng.random() > PASS_TIP_CHANCE:
             return ""
         try:
             return ai.pass_tip(self.current().question, sql, self.current().answer)
@@ -334,6 +370,7 @@ class Game:
         if not self.finished:
             progress.record_result(self.db, lv, passed=False)
             progress.log_attempt(self.db, lv, "-- gave up", False, self.hints_used, "practice")
+            self.session["missed"] += 1
             self.finished = True
         exp = grader.expected_result(self.db, lv)
         return {"answer": lv.answer.strip(), "explain": lv.explain, "columns": exp.columns,
@@ -476,7 +513,7 @@ class Game:
         ids: set[str] = set()
         for diff, topic in zip(EXAM_PLAN, EXAM_TOPICS):
             try:
-                lv = self.pick(topic=topic, difficulty=diff, allow_ai=use_ai, exclude=ids)
+                lv = self.pick(topic=topic, difficulty=diff, allow_ai=use_ai, exclude=ids, review=False)
             except RuntimeError:
                 continue
             chosen.append(lv)
@@ -512,7 +549,7 @@ class Game:
                 "points": lv.points, "sql": sql, "passed": v.passed, "message": v.message, "tip": v.tip,
                 "answer": lv.answer.strip(), "explain": lv.explain, "ai_comment": "",
             })
-        if ai_comments and self.ai_available():
+        if ai_comments and self.ai_feedback_on():
             todo = [r for r in results if not r["passed"] and r["sql"]]
 
             def comment(r):
