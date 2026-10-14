@@ -569,8 +569,9 @@ class Shell:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="psqlay", description="SQL practice playground")
     ap.add_argument("command", nargs="?", default="play",
-                    choices=["play", "web", "stop", "reset", "doctor"],
-                    help="play (default), web, stop the private Postgres, reset progress, doctor")
+                    choices=["play", "web", "setup", "stop", "reset", "doctor"],
+                    help="play (default), web, setup (one-time init), stop the private Postgres, "
+                         "reset progress, doctor")
     ap.add_argument("--port", type=int, default=8000, help="web port (default 8000)")
     ap.add_argument("--no-browser", action="store_true", help="web: don't open a browser")
     args = ap.parse_args(argv)
@@ -591,6 +592,14 @@ def main(argv: list[str] | None = None) -> int:
         console.print(f"[red]{e}[/]")
         return 1
 
+    if args.command == "setup":
+        ws = game.worlds()
+        print("psqlay is set up.")
+        print(f"  database : {game.db.cluster.base} (private, socket-only, no password)")
+        print(f"  worlds   : " + ", ".join(f"{w['slug']} ({w['levels']} levels)" for w in ws))
+        print(f"  AI       : {'on (OPENAI_API_KEY found)' if ai.available() else 'off (no OPENAI_API_KEY; optional)'}")
+        print("Play with:  psqlay        or  psqlay web")
+        return 0
     if args.command == "reset":
         from sqlplay.engine import progress
 

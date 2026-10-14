@@ -181,8 +181,8 @@ def _row_feedback(user: list[tuple], exp: list[tuple], user_sql: str = "") -> tu
         if ne and nu >= ne * 3 and not (set(ce) <= set(cu)) and shape["joins"]:
             return (
                 f"Way too many rows: {nu} instead of {ne}.",
-                "Rows are being paired with rows they shouldn't be. Check that every joined table "
-                "has a correct link (ON a.col = b.col), one per table after the first.",
+                "Either rows are being paired wrongly (check each JOIN's ON a.col = b.col, one per "
+                "table after the first), or you're selecting a different set of rows than the question asks for.",
             )
         if set(ce) <= set(cu):
             return (

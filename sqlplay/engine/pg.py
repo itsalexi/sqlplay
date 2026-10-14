@@ -13,6 +13,10 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import config
+
+config.load()   # so SQLPLAY_PG_BIN / SQLPLAY_HOME / SQLPLAY_PORT can live in .env
+
 PORT = int(os.environ.get("SQLPLAY_PORT", "54329"))
 
 

@@ -204,7 +204,7 @@ function renderRail() {
   $("schema").querySelectorAll(".col").forEach((c) => (c.onclick = () => insert(c.dataset.col)));
   $("joinmap").innerHTML = joinMapHTML(S.join_map || "");
   const notes = (S.notes || "").trim();
-  $("notes").innerHTML = notes ? `<details><summary>data notes</summary><div>${esc(notes)}</div></details>` : "";
+  $("notes").innerHTML = notes ? `<details><summary> data notes</summary><div>${esc(notes)}</div></details>` : "";
   const ss = S.status.session;
   if (ss && (ss.attempts || ss.missed)) {
     const mins = Math.max(1, Math.round((Date.now() / 1000 - ss.started) / 60));

@@ -61,7 +61,8 @@ def test_missed_level_comes_back(db, monkeypatch):
     monkeypatch.setattr(game_mod, "REVIEW_CHANCE", 1.0)
     g.level = None
     back = g.pick(topic="selfleft", difficulty=lv.difficulty)
-    assert g.is_review and back.id == lv.id
+    seen = __import__("sqlplay.engine.progress", fromlist=["x"]).seen_level_ids(db, "pizza")
+    assert g.is_review and back.topic == "selfleft" and seen.get(back.id) is False
 
 
 def test_restarts_stopped_server(db):
