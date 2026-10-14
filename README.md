@@ -206,3 +206,7 @@ sqlplay/
 tests/
 docs/       design, agent setup prompt, world format
 ```
+
+## License
+
+[MIT](LICENSE)
