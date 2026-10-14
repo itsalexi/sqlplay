@@ -1,12 +1,37 @@
-# psqlay
+<div align="center">
 
-**Endless SQL practice for PostgreSQL, in your terminal or browser.**
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/img/logo-dark.svg">
+  <img alt="psqlay" src="docs/img/logo-light.svg" width="250">
+</picture>
 
-psqlay gives you exam-style SQL questions and grades your answers by **comparing results, not query
-text**. Any correct way of writing a query passes. It runs entirely on your machine, works without
-an API key, and can use OpenAI for tutor feedback and new content if you want.
+**Endless SQL practice for PostgreSQL. In your terminal or your browser.**
 
-![psqlay in the browser](docs/img/web-dark.png)
+Exam-style questions, graded by comparing **results, not query text**.<br>
+Runs on your machine. No account. API key optional.
+
+<a href="#quick-start">Quick start</a> ·
+<a href="#features">Features</a> ·
+<a href="#playing">Playing</a> ·
+<a href="docs/AGENT_SETUP.md">Set up with an AI agent</a>
+
+<br>
+
+![PostgreSQL 14+](https://img.shields.io/badge/PostgreSQL-14%2B-1b1c1e?style=flat-square&labelColor=0d0f12)
+![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-1b1c1e?style=flat-square&labelColor=0d0f12)
+![macOS · Linux](https://img.shields.io/badge/macOS%20·%20Linux-supported-1b1c1e?style=flat-square&labelColor=0d0f12)
+![License MIT](https://img.shields.io/badge/license-MIT-8be9b0?style=flat-square&labelColor=0d0f12)
+
+<br>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/img/web-dark.png">
+  <img alt="psqlay in the browser" src="docs/img/web-light.png" width="900">
+</picture>
+
+</div>
+
+<br>
 
 ```
   ●●●○○  level 3 · self-join & left join · 15 pts
@@ -18,111 +43,96 @@ pizza=# SELECT p.pizzaid AS "Pizza ID", p.pizzaname AS "Pizza"
 pizza-# FROM pizza p JOIN orderline ol ON p.pizzaid = ol.pizzaid;
 
 ✗ Way too many rows: 34 instead of 4.
-  Either rows are being paired wrongly (check each JOIN's ON a.col = b.col, one per table
-  after the first), or you're selecting a different set of rows than the question asks for.
-  ai › Your inner JOIN keeps only pizzas that DO appear in orderline. Think about which
-       kind of join keeps pizzas with no matching order, and how to pick out just those.
+  Either rows are being paired wrongly, or you're selecting a different
+  set of rows than the question asks for.
+  ai › Your inner JOIN keeps only pizzas that DO appear in orderline. Think
+       about which kind of join keeps pizzas with no matching order.
 ```
 
----
+<br>
 
 ## Quick start
 
-### Option A: let an AI agent set it up
+**With an AI agent:** paste [docs/AGENT_SETUP.md](docs/AGENT_SETUP.md) into Claude Code, Codex,
+Cursor or any other coding agent. It checks your setup, asks before installing anything, and never
+asks for your API key.
 
-Paste the prompt from **[docs/AGENT_SETUP.md](docs/AGENT_SETUP.md)** into Claude Code, Codex, Cursor or
-any other coding agent. It checks for PostgreSQL and uv, installs psqlay, runs the one-time setup, and
-never asks for your API key in chat.
-
-### Option B: by hand
-
-You need **PostgreSQL 14+** (the server programs: `initdb`, `pg_ctl`, `postgres`), **[uv](https://docs.astral.sh/uv/)**
-and **git**. Supported on macOS and Linux; on Windows, use WSL.
+**By hand:** you need [PostgreSQL 14+](https://www.postgresql.org/download/), [uv](https://docs.astral.sh/uv/) and git.
 
 ```bash
 git clone https://github.com/itsalexi/sqlplay ~/psqlay
-cd ~/psqlay
-uv tool install -e . --with openai
+cd ~/psqlay && uv tool install -e . --with openai
 psqlay setup
 ```
 
-Install PostgreSQL with `brew install postgresql@17` on macOS or `sudo apt install postgresql` on
-Debian/Ubuntu. If `psqlay doctor` can't find it, add `SQLPLAY_PG_BIN=/path/to/postgres/bin` to
-`~/psqlay/.env`.
-
-Then:
-
 ```bash
-psqlay        # play in the terminal
-psqlay web    # play in the browser at http://127.0.0.1:8000
+psqlay          # terminal
+psqlay web      # browser · http://127.0.0.1:8000
 ```
 
----
+> [!TIP]
+> No Postgres yet? `brew install postgresql@17` (macOS) or `sudo apt install postgresql` (Debian/Ubuntu).
+> On Windows, use WSL.
 
-## What's inside
+<br>
 
-- **Three built-in worlds with 82 hand-written levels:** 🍕 a pizza chain, 🏫 a school and 🎬 a movie
-  rental shop. Each is shaped like the classic "bookstore" exam database: a long join chain, a link
-  table, a self-reference, and rows with no match. The pizza world includes the ten classic bookstore
-  exam questions rewritten for pizza.
-- **Questions that don't run out.** Once you've done the hand-written levels, a pattern generator builds
-  new questions from the world's tables. Every one is checked against the real data before you see it.
-  With a key, the AI also writes new levels in the background.
-- **Adaptive difficulty** for each topic: SELECT/WHERE · AS/CONCAT/ORDER BY/DISTINCT · aggregates ·
-  subqueries · JOINs · self-join & LEFT JOIN · GROUP BY/HAVING (unlocked as you go). You start at
-  level 3, a typical exam question. Two passes in a row move you up a level, and two skips move you
-  down. You can also lock one topic to drill it.
-- **Expected output** appears under each question, like an exam handout. You can hide it for harder
-  practice.
-- **Feedback that teaches:**
-  - Postgres errors explained in plain English (`column does not exist`, the GROUP BY error, curly
-    quotes, unclosed brackets, and more)
-  - Row-count diagnosis: "did you forget DISTINCT?", "your WHERE is too strict", "a join condition is
-    missing"
-  - When you're partly right, the exact **missing rows** and **extra rows**
-  - Checks for sort order and column labels
-- **Review:** levels you skipped or gave up on come back later for another try.
-- **Exam mode:** 10 mixed questions (three at level 3, five at level 4, two at level 5), no hints, an
-  optional timer, and a graded report at the end.
-- **Freedom to experiment:** run any query without grading, use tab completion and query history, and
-  explore with `\dt` and `\d`, just like in psql.
+## Features
+
+|   |   |
+|---|---|
+| **Three worlds, 82 hand-written levels** | 🍕 pizza chain · 🏫 school · 🎬 movie rentals, each shaped like the classic bookstore exam database. The pizza world includes the ten classic exam questions, rewritten for pizza. |
+| **Questions that don't run out** | Once you've done the hand-written levels, a generator builds new questions from each world's tables, and every one is checked against the real data. With a key, the AI writes more in the background. |
+| **Graded by results** | Any correct query passes: `JOIN … ON`, WHERE-style equijoins, `NATURAL JOIN`, `NOT IN`. Order and labels are only checked when the question asks for them. |
+| **Expected output** | Shown under every question, like an exam handout. You can hide it for harder practice. |
+| **Feedback that teaches** | Postgres errors in plain English, row-count diagnosis ("forgot DISTINCT?"), and the exact **missing** and **extra** rows when you're partly right. |
+| **Adaptive** | Seven topics, each with its own level from 1 to 5. You start at 3, a typical exam question. Levels you missed come back later for review. |
+| **Exam mode** | Ten mixed questions, an optional timer, no hints, and a graded report at the end. |
+| **Built for trying things** | `\g` runs a query without grading it. Tab completion, query history, `\dt`, `\d`: everything psql has. |
+| **Optional AI** | A tutor that points at the mistake without giving the answer, AI-written levels, and whole new worlds. Each one has its own off switch. |
+
+<br>
 
 ## Playing
 
-### Terminal
+<details>
+<summary><b>Terminal</b></summary>
+<br>
 
 | Input | What it does |
 |---|---|
 | SQL ending in `;` | Run your query and grade it |
 | SQL ending in `\g` | Just run it, without grading |
-| `Tab` / `↑` | Complete table and column names / previous queries |
-| `\hint` | Next hint (3 per level, each costs 2 points) |
-| `\skip` | New question (counts as a skip) |
-| `\answer` | Give up and see the answer with an explanation |
-| `\dt` · `\d <table>` · `\map` | List tables, describe a table, show the join map |
-| `\topic <name>` · `\mix` | Lock to one topic / go back to the mix |
-| `\level <topic> <1-5>` | Set your difficulty in a topic |
-| `\world [name]` | List worlds / switch world |
-| `\exam [minutes]` | Start a mock exam (`\next`, `\prev`, `\submit` inside it) |
-| `\expected on\|off` | Show or hide the expected output |
-| `\ai` · `\ai feedback on\|off` · `\ai levels on\|off` | AI settings |
-| `\newworld [theme]` | Have the AI invent a new world |
-| `\score` · `\help` · `\q` | Stats, help, quit |
+| `Tab` · `↑` | Complete names · previous queries |
+| `\hint` · `\skip` · `\answer` | Hint (−2 pts) · new question · give up and see the answer |
+| `\dt` · `\d <table>` · `\map` | Tables · columns · join map |
+| `\topic <name>` · `\mix` · `\level <topic> <1-5>` | Drill one topic · back to the mix · set your level |
+| `\world [name]` · `\newworld [theme]` | Switch world · have the AI invent one |
+| `\exam [minutes]` | Mock exam (`\next` · `\prev` · `\submit`) |
+| `\expected on\|off` · `\ai` | Expected output · AI settings |
+| `\score` · `\help` · `\q` | Stats · help · quit |
 
-### Browser
+</details>
+
+<details>
+<summary><b>Browser</b></summary>
+<br>
 
 | Key | What it does |
 |---|---|
-| `⌘↵` / `Ctrl+↵` | Run and grade |
-| `⇧⌘↵` | Just run (Try) |
-| `⌥↑` / `⌥↓` | Step through past queries |
+| `⌘↵` | Run and grade |
+| `⇧⌘↵` | Just run |
+| `⌥↑` `⌥↓` | Past queries |
 | `⌥H` · `⌥A` · `⌥S` | Hint · give up · skip |
 | `↵` | Next level, after you pass |
 
-Click a column in the schema sidebar to insert its name. Click **AI** in the top bar to turn AI
-features on or off. The page follows your system's light/dark setting.
+Click a column in the sidebar to insert it. Click **AI** in the top bar for AI settings. The page follows
+your system's light/dark setting.
 
-### Other commands
+</details>
+
+<details>
+<summary><b>Other commands</b></summary>
+<br>
 
 ```bash
 psqlay setup    # one-time init (safe to re-run)
@@ -131,82 +141,93 @@ psqlay stop     # stop psqlay's private Postgres
 psqlay reset    # clear your progress
 ```
 
+</details>
+
+<br>
+
 ## AI (optional)
 
-Create `~/psqlay/.env` (start from `.env.example`). It's git-ignored:
-
 ```bash
-OPENAI_API_KEY=sk-...
-# optional
-OPENAI_GEN_MODEL=gpt-6.1-sol        # writes levels (medium reasoning) and worlds (high reasoning)
-OPENAI_FEEDBACK_MODEL=gpt-6.1-sol   # tutor feedback (low reasoning)
+cp .env.example .env    # then paste your key after OPENAI_API_KEY=
 ```
 
-| Feature | When it runs | Rough cost |
+Each AI feature costs a fraction of a cent. A typical hour of practice comes to about **$0.10–0.30**.
+Switch any of them off with `\ai` or the **AI** toggle. Without a key, everything else still works.
+
+<details>
+<summary>Costs per feature</summary>
+<br>
+
+| Feature | When it runs | Cost |
 |---|---|---|
-| Tutor feedback | Each wrong answer: names what to rethink, never the answer | ~$0.001 |
+| Tutor feedback | Each wrong answer | ~$0.001 |
 | Tips | About 1 in 3 correct answers | ~$0.001 |
 | AI-written levels | In the background, once the hand-written levels at your level run out | ~$0.01 each |
 | Exam comments | Wrong answers in the exam report | ~$0.01 per exam |
-| New world | When you ask for one (`\newworld`, or **New world** in the browser) | ~$0.10–0.25 |
+| New world | When you ask for one | ~$0.10–0.25 |
 
-A typical hour of practice costs about **$0.10–0.30**. You can switch each feature off with `\ai` or the
-**AI** toggle, and you can set a hard spending limit in your OpenAI dashboard. Without a key, everything
-else still works.
+Models are set with `OPENAI_GEN_MODEL` and `OPENAI_FEEDBACK_MODEL` (default `gpt-6.1-sol`).
+
+</details>
+
+<br>
 
 ## How it works
 
-- **Private Postgres.** psqlay uses your installed PostgreSQL programs to create its own database
-  server in `~/.sqlplay`. It only listens on a local socket (no network port), needs no password,
-  starts when you open psqlay, and restarts itself if it's stopped. Your own Postgres server is never
-  touched.
-- **Each world is its own schema**, in a `sqlplayground` database.
-- **Sandboxed queries.** Your SQL runs as a read-only role inside a read-only transaction, with a
-  3-second time limit, a 500-row cap, and one statement at a time. That role can't see the progress
-  tables.
-- **Grading** runs the level's answer and your query, then compares the rows as multisets. Numbers are
-  rounded to 2 decimal places and text is trimmed. Order and labels are only checked when the question
-  asks for them.
+<details>
+<summary>Private database, sandbox, grading</summary>
+<br>
+
+- **Private Postgres.** psqlay creates its own database server in `~/.sqlplay` using your installed
+  PostgreSQL. It listens on a local socket only (no network port), needs no password, and restarts
+  itself if it's stopped. Your own Postgres is never touched.
+- **Sandbox.** Your SQL runs as a read-only role, in a read-only transaction, with a 3-second limit,
+  a 500-row cap and one statement at a time.
+- **Grading.** psqlay runs the level's answer and your query, then compares the rows as multisets.
+  Numbers are rounded to 2 places and text is trimmed.
 - **AI output is untrusted.** Generated worlds are parsed with the real Postgres parser, and only
-  `CREATE TABLE` and `INSERT ... VALUES` are allowed, with no functions and size limits. Generated
-  levels must run, return a sensible number of rows, have no ties in their sort order, and stay within
-  the syllabus. Anything that fails is thrown away.
+  `CREATE TABLE` and `INSERT … VALUES` are allowed. Generated levels must run, return sensible rows,
+  and stay within the syllabus. Anything else is thrown away.
 
-The full design is in [docs/design.md](docs/design.md).
+There's more in [docs/design.md](docs/design.md). To build your own world, see [docs/worlds.md](docs/worlds.md).
 
-## Make your own world
+</details>
 
-See **[docs/worlds.md](docs/worlds.md)** for the file format, the difficulty scale, and how to check
-your levels.
-
-## Troubleshooting
+<details>
+<summary>Troubleshooting</summary>
+<br>
 
 | Problem | Fix |
 |---|---|
-| `Could not find PostgreSQL server binaries` | Install PostgreSQL, or set `SQLPLAY_PG_BIN` in `~/psqlay/.env` |
+| `Could not find PostgreSQL server binaries` | Install PostgreSQL, or set `SQLPLAY_PG_BIN` in `.env` |
 | `initdb: cannot be run as root` | Run psqlay as a normal user |
 | Port 54329 is busy | Set `SQLPLAY_PORT=54331` in `.env` |
 | `psqlay: command not found` | Run `uv tool update-shell`, then open a new terminal |
-| Something else | `psqlay doctor`, then check `~/.sqlplay/postgres.log` |
+| Anything else | `psqlay doctor`, then check `~/.sqlplay/postgres.log` |
 
-## Development
+</details>
+
+<details>
+<summary>Development</summary>
+<br>
 
 ```bash
 uv sync --extra ai
-uv run pytest -q                                         # uses a throwaway Postgres in .pgtest/
+uv run pytest -q                       # throwaway Postgres in .pgtest/
 uv run python -m sqlplay.tools.check_world sqlplay/worlds/pizza --show
 ```
 
 ```
-sqlplay/
-  engine/   pg (private server) · db · sandbox · grader · feedback · generator · game · ai · validator
-  cli/      terminal app (prompt_toolkit + rich)
-  web/      FastAPI server + one static page (no framework)
-  worlds/   built-in worlds
-tests/
-docs/       design, agent setup prompt, world format
+sqlplay/engine   private server · sandbox · grader · feedback · generator · game · ai
+sqlplay/cli      terminal app
+sqlplay/web      local server + one static page
+sqlplay/worlds   built-in worlds
 ```
 
-## License
+</details>
 
-[MIT](LICENSE)
+<br>
+
+<div align="center">
+<sub>MIT · made for the night before the exam</sub>
+</div>
