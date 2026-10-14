@@ -313,7 +313,7 @@ class Shell:
                 console.print("[yellow]Add OPENAI_API_KEY to .env to unlock AI worlds.[/]")
                 return
             theme = " ".join(args) or None
-            with console.status(f"[{DIM}]designing a new world · about a minute[/]", spinner="dots"):
+            with console.status(f"[{DIM}]designing a new world · a minute or two[/]", spinner="dots"):
                 w = self.g.new_world(theme)
             console.print(f"[green]New world:[/] {w['emoji']} [bold]{w['name']}[/] ({w['slug']}). "
                           f"Switch with \\world {w['slug']}")

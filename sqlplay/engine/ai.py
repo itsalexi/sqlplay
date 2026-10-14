@@ -50,7 +50,7 @@ def _call(model: str, effort: str, instructions: str, prompt: str, json_out: boo
 
 
 def _json(model: str, effort: str, instructions: str, prompt: str) -> dict:
-    text = _call(model, effort, instructions, prompt, json_out=True)
+    text = _call(model, effort, instructions, prompt + "\n\nRespond with a single JSON object.", json_out=True)
     try:
         return json.loads(text)
     except json.JSONDecodeError:
@@ -124,9 +124,15 @@ Return ONE JSON object with keys: question, columns, ordered, order_note, answer
 - columns: list of exact output labels in order, or [] if labels aren't required.
 - ordered: true only if the question asks for an order; then ORDER BY output columns with NO ties
   (add a tie-breaker). order_note: short description of the order.
-- answer: ONE PostgreSQL SELECT using explicit JOIN ... ON and aliases. No CTEs, window functions,
-  LATERAL, or schema names. Must return 1-40 rows on the given data. ROUND(AVG(..), 2) when an
-  average is shown, and say "rounded to 2 decimals".
+- answer: ONE PostgreSQL SELECT using explicit JOIN ... ON and aliases. ONLY these features:
+  SELECT/WHERE/AND/OR/IN/BETWEEN/LIKE, AS labels, CONCAT, ORDER BY, DISTINCT, MAX/MIN/AVG/COUNT/SUM,
+  ROUND, subqueries in WHERE (=, >, <, IN, NOT IN), JOIN ... ON chains, self-joins, LEFT JOIN ... IS NULL,
+  GROUP BY/HAVING. NOT allowed: subqueries in FROM or SELECT, WITH/CTEs, window functions, CASE, LATERAL,
+  UNION, schema names. Keep it short: at most ~10 lines. Must return 1-40 rows on the given data.
+  ROUND(AVG(..), 2) when an average is shown, and say "rounded to 2 decimals".
+- Keep the question SHORT and natural, like the examples: 1-3 sentences, under 70 words. Labels in
+  Title Case with spaces (e.g. "Customer Name"), never snake_case.
+- Match the EXAMPLES' style and difficulty closely; they are real exam-style questions.
 - hints: exactly 3 strings: concept nudge (no code); skeleton with ____ blanks; near-answer.
 - explain: 2-4 sentences for a beginner on why the answer works.
 Difficulty scale: 1-2 warm-up single skill; 3 typical HOA (two skills combined, labels, sorting);
@@ -158,7 +164,7 @@ def generate_level(
         f"Write a NEW question. Topic: {topic} ({TOPIC_GUIDE.get(topic, topic)}). Difficulty: {difficulty}.\n"
         f"Do not repeat these existing questions:\n{avoid or '(none)'}"
     )
-    return _json(gen_model(), "high", LEVEL_RULES, prompt)
+    return _json(gen_model(), config.get("OPENAI_LEVEL_EFFORT", "medium"), LEVEL_RULES, prompt)
 
 
 WORLD_RULES = """You design small themed PostgreSQL practice databases for a beginner preparing for an

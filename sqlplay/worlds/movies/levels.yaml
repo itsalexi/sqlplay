@@ -522,24 +522,21 @@
   answer: |
     SELECT m.title AS "Title"
     FROM movie m
-    LEFT JOIN (SELECT ri.movieid
-               FROM rentalitem ri
-               JOIN rental r ON r.rentalid = ri.rentalid
-               WHERE r.rentaldate >= '2024-01-01' AND r.rentaldate <= '2024-12-31') t
-           ON t.movieid = m.movieid
-    WHERE t.movieid IS NULL
+    WHERE m.movieid NOT IN (SELECT ri.movieid
+                            FROM rentalitem ri
+                            JOIN rental r ON r.rentalid = ri.rentalid
+                            WHERE r.rentaldate BETWEEN '2024-01-01' AND '2024-12-31')
     ORDER BY "Title";
   hints:
-    - "First get the movies that WERE rented in 2024 (rentalitem joined to rental, filtered by date). Then find movies with no match in that set."
-    - "SELECT m.title AS \"Title\" FROM movie m LEFT JOIN (SELECT ri.movieid FROM rentalitem ri JOIN rental r ON ____ WHERE ____) t ON t.movieid = m.movieid WHERE ____ ORDER BY \"Title\";"
-    - "... WHERE r.rentaldate >= '2024-01-01' AND r.rentaldate <= '2024-12-31') t ON t.movieid = m.movieid WHERE t.movieid IS NULL ..."
+    - First get the movies that WERE rented in 2024 (rentalitem joined to rental, filtered by date). Then keep the movies that are NOT in that list.
+    - SELECT m.title AS "Title" FROM movie m WHERE m.movieid NOT IN (SELECT ri.movieid FROM rentalitem ri JOIN rental r ON ____ WHERE ____) ORDER BY "Title";
+    - "... WHERE m.movieid NOT IN (SELECT ri.movieid FROM rentalitem ri JOIN rental r ON r.rentalid = ri.rentalid WHERE r.rentaldate BETWEEN '2024-01-01' AND '2024-12-31') ..."
   explain: >
-    The date filter must be applied before the "no match" test. If you LEFT JOIN rentalitem and rental and then
-    put the 2024 filter in WHERE, the unmatched NULL rows are thrown away and you lose the never-rented movies.
-    Filtering inside a subquery (or in the ON clause), or using NOT IN (movies rented in 2024), keeps them.
-    "Rented before 2024" is also not the same thing: STARFALL was rented in 2023 and again in 2024.
+    The subquery lists every movie rented in 2024; NOT IN keeps the movies missing from that list,
+    including movies never rented at all. A trap: LEFT JOIN rentalitem and rental and then putting
+    the 2024 filter in WHERE throws away the unmatched NULL rows, so the never-rented movies vanish.
+    "Rented before 2024" is not the same either: STARFALL was rented in 2023 and again in 2024.
 
-# ------------------------------------------------------------------ group by / having
 - id: m23
   topic: groupby
   difficulty: 3

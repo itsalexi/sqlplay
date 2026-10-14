@@ -550,7 +550,7 @@ function wire() {
   });
   $("newworld-btn").onclick = () => sheet({
     html: `<h3>New world</h3><p>Describe a theme, or leave it blank for a surprise. The AI designs the tables
-      and data, then psqlay checks them before you play. Takes about a minute.</p>
+      and data, then psqlay checks them before you play. Takes a minute or two.</p>
       <input id="theme" placeholder="a coffee shop, a football league, a zoo…" autocomplete="off">`,
     ok: "Create",
     onOpen: () => setTimeout(() => $("theme").focus(), 50),

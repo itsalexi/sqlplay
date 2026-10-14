@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import random
 import re
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -29,6 +30,37 @@ Rules:
   * Every non-aggregate column in SELECT must also be in GROUP BY.
   * WHERE filters rows BEFORE grouping.  HAVING filters groups AFTER grouping:
       ... GROUP BY category HAVING COUNT(*) >= 2"""
+
+
+def in_syllabus(sql: str) -> bool:
+    """Reject answers using SQL the course doesn't cover (subquery in FROM, CTEs, windows, CASE...)."""
+    from pglast import ast, parse_sql
+    from pglast.visitors import Visitor
+
+    class V(Visitor):
+        bad = False
+
+        def visit_RangeSubselect(self, *_):
+            self.bad = True
+
+        def visit_WithClause(self, *_):
+            self.bad = True
+
+        def visit_WindowDef(self, *_):
+            self.bad = True
+
+        def visit_CaseExpr(self, *_):
+            self.bad = True
+
+    try:
+        stmts = parse_sql(sandbox.clean_sql(sql))
+    except Exception:  # noqa: BLE001
+        return False
+    if len(stmts) != 1 or not isinstance(stmts[0].stmt, ast.SelectStmt) or stmts[0].stmt.op != 0 and str(stmts[0].stmt.op) != "SetOperation.SETOP_NONE":
+        return False
+    v = V()
+    v(stmts[0])
+    return not v.bad and sql.count("\n") <= 16
 
 
 def preview(columns: list[str], rows: list, n: int = 8) -> str:
@@ -78,6 +110,8 @@ class Game:
         self.last_topic: str | None = None
         self.exam: ExamState | None = None
         self.rng = random.Random()
+        self._prefetching: set[tuple[str, str, int]] = set()
+        self._prefetch_lock = threading.Lock()
 
     # ------------------------------------------------------------ status
     def ai_available(self) -> bool:
@@ -174,9 +208,9 @@ class Game:
         if exact:
             return self.rng.choice(exact)
         if allow_ai and self.ai_available():
-            lv = self._ai_level(topic, diff, stored)
-            if lv:
-                return lv
+            # AI levels are slow to write: make one in the background for next time,
+            # and serve an instant level now.
+            self._prefetch_ai(topic, diff)
         gen = generator.generate(self.db, self.world, topic, diff, avoid=set(seen) | exclude | {l.id for l in stored})
         if gen and gen.difficulty == diff:
             self._save(gen)
@@ -295,42 +329,71 @@ class Game:
         self.level = None
 
     # ------------------------------------------------------------ AI content
-    def _schema_text(self) -> str:
+    def _schema_text(self, world: str | None = None) -> str:
+        world = world or self.world
         lines = []
-        for t in self.schema():
+        for t in worlds.schema_info(self.db, world):
             cols = ", ".join(
                 f"{c['name']} {c['type']}" + (" PK" if c["pk"] else "") + (f" -> {c['fk']}" if c["fk"] else "")
                 for c in t["columns"]
             )
             lines.append(f"{t['table']}({cols})  [{t['rows']} rows]")
-        meta = self.world_meta()
+        meta = (worlds.get_world(self.db, world) or {}).get("meta", {})
         if meta.get("join_map"):
             lines.append("\nJoin map:\n" + meta["join_map"])
         if meta.get("notes"):
             lines.append("\nNotes: " + meta["notes"])
         return "\n".join(lines)
 
-    def _sample_text(self, per_table: int = 6) -> str:
+    def _sample_text(self, world: str | None = None, per_table: int = 6) -> str:
+        world = world or self.world
         out = []
-        for t in self.schema():
-            r = sandbox.run(self.db, self.world, f'SELECT * FROM "{t["table"]}" LIMIT {per_table}')
+        for t in worlds.schema_info(self.db, world):
+            r = sandbox.run(self.db, world, f'SELECT * FROM "{t["table"]}" LIMIT {per_table}')
             if r.ok:
                 out.append(f"-- {t['table']}\n" + preview(r.columns, r.rows, per_table))
         return "\n\n".join(out)
 
-    def _ai_level(self, topic: str, diff: int, stored: list[Level]) -> Level | None:
-        examples = sorted(
-            [lv.to_dict() for lv in stored if lv.source == "builtin"],
-            key=lambda d: abs(d["difficulty"] - diff),
-        )
+    def _prefetch_ai(self, topic: str, diff: int) -> None:
+        key = (self.world, topic, diff)
+        with self._prefetch_lock:
+            if key in self._prefetching or len(self._prefetching) >= 2:
+                return
+            self._prefetching.add(key)
+        world = self.world
+        stored = self._stored_levels(topic)
+
+        def work():
+            try:
+                self._ai_level(topic, diff, stored, world=world)
+            except Exception:  # noqa: BLE001 - background best effort
+                pass
+            finally:
+                with self._prefetch_lock:
+                    self._prefetching.discard(key)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _example_levels(self, topic: str, diff: int) -> list[dict]:
+        with self.db.app() as conn:
+            rows = conn.execute(
+                """SELECT data FROM sqlplay.levels WHERE source = 'builtin' AND topic = %s
+                   ORDER BY abs(difficulty - %s), random() LIMIT 3""",
+                (topic, diff),
+            ).fetchall()
+        return [r[0] for r in rows]
+
+    def _ai_level(self, topic: str, diff: int, stored: list[Level], world: str | None = None) -> Level | None:
+        world = world or self.world
+        examples = self._example_levels(topic, diff)
         try:
             spec = ai.generate_level(
-                self._schema_text(), self._sample_text(), topic, diff, examples,
+                self._schema_text(world), self._sample_text(world), topic, diff, examples,
                 [lv.question for lv in stored],
             )
             lv = Level(
-                id=level_id(self.world, "ai", spec["question"], spec["answer"]),
-                world=self.world, topic=topic, difficulty=diff,
+                id=level_id(world, "ai", spec["question"], spec["answer"]),
+                world=world, topic=topic, difficulty=diff,
                 question=spec["question"].strip(), answer=spec["answer"].strip(),
                 columns=spec.get("columns") or None, ordered=bool(spec.get("ordered")),
                 order_note=spec.get("order_note", ""), hints=list(spec.get("hints", []))[:3],
@@ -338,7 +401,9 @@ class Game:
             )
         except (ai.AIError, KeyError, TypeError, ValueError):
             return None
-        if len(lv.hints) < 3 or generator.validate_spec(self.db, self.world, lv) is not None:
+        if len(lv.hints) < 3 or generator.validate_spec(self.db, world, lv) is not None:
+            return None
+        if not in_syllabus(lv.answer) or len(lv.question) > 600:
             return None
         self._save(lv)
         return lv
