@@ -13,7 +13,8 @@ Runs on your machine. No account. API key optional.
 <a href="#quick-start">Quick start</a> ·
 <a href="#features">Features</a> ·
 <a href="#playing">Playing</a> ·
-<a href="docs/AGENT_SETUP.md">Set up with an AI agent</a>
+<a href="docs/AGENT_SETUP.md">Set up with an AI agent</a> ·
+<a href="docs/cheatsheet.md">SQL cheat sheet</a>
 
 <br>
 
@@ -169,6 +170,15 @@ Switch any of them off with `\ai` or the **AI** toggle. Without a key, everythin
 Models are set with `OPENAI_GEN_MODEL` and `OPENAI_FEEDBACK_MODEL` (default `gpt-6.1-sol`).
 
 </details>
+
+<br>
+
+## SQL cheat sheet
+
+[**docs/cheatsheet.md**](docs/cheatsheet.md) is a complete PostgreSQL reference, with every example
+checked against the bookstore database. It covers psql commands, every clause, functions,
+aggregates, GROUP BY, subqueries, every join type, set operations, CASE, CTEs and window
+functions, DML/DDL, an error → fix table, Oracle → PostgreSQL equivalents, and worked exam patterns.
 
 <br>
 
