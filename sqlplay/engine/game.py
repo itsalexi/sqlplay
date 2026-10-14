@@ -5,6 +5,7 @@ from __future__ import annotations
 import random
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
 from . import ai, generator, grader, progress, sandbox, worlds
@@ -67,7 +68,8 @@ class Game:
         all_worlds = worlds.list_worlds(self.db)
         if not all_worlds:
             raise RuntimeError("No worlds installed")
-        self.world = all_worlds[0]["slug"]
+        slugs = [w["slug"] for w in all_worlds]
+        self.world = "pizza" if "pizza" in slugs else slugs[0]
         self.locked: str | None = None
         self.level: Level | None = None
         self.hints_used = 0
@@ -424,17 +426,23 @@ class Game:
                 v = grader.Verdict(False, "blank", "No answer given.")
             if v.passed:
                 score += lv.points
-            comment = ""
-            if ai_comments and not v.passed and self.ai_available():
-                try:
-                    comment = ai.exam_comment(lv.question, sql, v.message, lv.answer)
-                except ai.AIError:
-                    comment = ""
             results.append({
                 "index": i, "question": lv.question, "topic": lv.topic, "difficulty": lv.difficulty,
                 "points": lv.points, "sql": sql, "passed": v.passed, "message": v.message, "tip": v.tip,
-                "answer": lv.answer.strip(), "explain": lv.explain, "ai_comment": comment,
+                "answer": lv.answer.strip(), "explain": lv.explain, "ai_comment": "",
             })
+        if ai_comments and self.ai_available():
+            todo = [r for r in results if not r["passed"] and r["sql"]]
+
+            def comment(r):
+                try:
+                    return ai.exam_comment(r["question"], r["sql"], r["message"], r["answer"])
+                except ai.AIError:
+                    return ""
+
+            with ThreadPoolExecutor(max_workers=10) as pool:
+                for r, text in zip(todo, pool.map(comment, todo)):
+                    r["ai_comment"] = text
         elapsed = int(time.time() - ex.started)
         summary = {"score": score, "total": total, "correct": sum(r["passed"] for r in results),
                    "count": len(results), "seconds": elapsed, "results": results}

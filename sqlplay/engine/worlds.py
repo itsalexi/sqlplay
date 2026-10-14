@@ -132,7 +132,7 @@ def list_worlds(db: Database) -> list[dict]:
         cur = conn.execute(
             """SELECT w.slug, w.name, w.emoji, w.blurb, w.source,
                       (SELECT count(*) FROM sqlplay.levels l WHERE l.world = w.slug)
-               FROM sqlplay.worlds w ORDER BY w.source <> 'builtin', w.created_at, w.slug"""
+               FROM sqlplay.worlds w ORDER BY w.source <> 'builtin', w.slug <> 'pizza', w.created_at, w.slug"""
         )
         return [
             dict(slug=s, name=n, emoji=e, blurb=b, source=src, levels=c)
