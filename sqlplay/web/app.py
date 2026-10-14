@@ -38,6 +38,10 @@ class ThemeBody(BaseModel):
     theme: str | None = None
 
 
+class ToggleBody(BaseModel):
+    on: bool
+
+
 class ExamStartBody(BaseModel):
     minutes: int | None = None
 
@@ -82,6 +86,7 @@ def create_app(game: Game, port: int = 8000) -> FastAPI:
         d["finished"] = game.finished
         d["passed"] = game.passed
         d["groupby_intro"] = game.groupby_intro() if game.needs_groupby_intro() else None
+        d["expected"] = game.expected(lv)
         return d
 
     def exam_payload() -> dict | None:
@@ -93,7 +98,8 @@ def create_app(game: Game, port: int = 8000) -> FastAPI:
             "remaining": ex.remaining,
             "minutes": ex.minutes,
             "questions": [
-                {**lv.public_dict(), "answer_sql": ex.answers.get(i, "")} for i, lv in enumerate(ex.levels)
+                {**lv.public_dict(), "answer_sql": ex.answers.get(i, ""), "expected": game.expected(lv)}
+                for i, lv in enumerate(ex.levels)
             ],
         }
 
@@ -193,6 +199,12 @@ def create_app(game: Game, port: int = 8000) -> FastAPI:
     def set_difficulty(body: DiffBody):
         with lock:
             game.set_difficulty(body.topic, body.difficulty)
+            return state()
+
+    @app.post("/api/expected")
+    def set_expected(body: ToggleBody):
+        with lock:
+            game.set_show_expected(body.on)
             return state()
 
     @app.post("/api/newworld")

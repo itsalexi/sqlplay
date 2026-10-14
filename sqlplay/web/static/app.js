@@ -213,6 +213,27 @@ function renderQuestion(lv, metaText) {
   if (lv.columns && lv.columns.length) rows.push(["columns", lv.columns.map((c) => `<code>"${esc(c)}"</code>`).join(", ")]);
   if (lv.ordered && lv.order_note) rows.push(["sort", esc(lv.order_note)]);
   $("q-reqs").innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+  renderExpected(lv.expected);
+}
+
+function renderExpected(exp) {
+  const el = $("expected");
+  if (!exp) { el.innerHTML = ""; return; }
+  const on = S.status.show_expected;
+  const n = exp.rows.length;
+  el.innerHTML = `
+    <div class="exp-head">
+      <span>expected output</span><span class="n">${n} row${n === 1 ? "" : "s"}</span>
+      <button id="exp-toggle">${on ? "hide" : "show"}</button>
+    </div>
+    ${on ? psqlTable(exp.columns, exp.rows, false, exp.numeric) : ""}`;
+  $("exp-toggle").onclick = async () => {
+    stashDraft();
+    const keepSQL = ta().value;
+    S = await api("expected", { on: !on });
+    renderAll();
+    if (mode === "practice") setEditor(keepSQL);
+  };
 }
 
 function renderPractice() {

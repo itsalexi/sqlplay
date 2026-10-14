@@ -79,6 +79,7 @@ def stats(db: Database) -> dict:
         "streak": int(rows.get("streak", 0)),
         "best_streak": int(rows.get("best_streak", 0)),
         "groupby_intro_seen": bool(rows.get("groupby_intro_seen", False)),
+        "show_expected": bool(rows.get("show_expected", True)),
     }
 
 
@@ -88,6 +89,11 @@ def _set_stat(conn, key: str, value) -> None:
            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value""",
         (key, Jsonb(value)),
     )
+
+
+def set_show_expected(db: Database, on: bool) -> None:
+    with db.app() as conn:
+        _set_stat(conn, "show_expected", on)
 
 
 def mark_groupby_intro_seen(db: Database) -> None:

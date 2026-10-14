@@ -188,6 +188,13 @@ h6 {
 .reqs dt { color: var(--fg-3); }
 .reqs dd { margin: 0; color: var(--fg-2); }
 .reqs code { color: var(--fg); }
+.expected { margin-top: 18px; }
+.exp-head { display: flex; align-items: baseline; gap: 12px; font-size: 12px; color: var(--fg-3); }
+.exp-head .n { color: var(--fg-3); opacity: .7; }
+.exp-head button { color: var(--fg-2); font-size: 12px; border-bottom: 1px solid var(--hair-2); }
+.exp-head button:hover { color: var(--fg); }
+.expected pre.table { margin-top: 10px; font-size: 12px; max-height: 280px; background: transparent;
+  box-shadow: 0 0 0 1px var(--hair); }
 .hints { margin-top: 18px; display: grid; gap: 8px; }
 .hint { display: grid; grid-template-columns: 56px 1fr; font-size: 12.5px; color: var(--fg-2); animation: rise .35s var(--ease) both; }
 .hint b { color: var(--amber); font-weight: 500; }

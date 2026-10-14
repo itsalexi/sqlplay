@@ -51,6 +51,7 @@ HELP = r"""
 
 [bold]Other[/]
   \score                   your stats
+  \expected on|off         show/hide the expected output under each question
   \ai on|off               AI feedback on/off (needs a key)
   \help                    this help
   \q                       quit (progress is saved)
@@ -62,6 +63,7 @@ your rows, but not whether it's right). Revise as often as you like.
   \n  or \next             next question          \p or \prev   previous question
   \go <n>                  jump to question n     \list         all questions + status
   \dt  \d <table>  \map    explore as usual       \submit       finish and get graded
+  \expected on|off         show/hide expected output
   \quit                    abandon the exam
 """
 
@@ -121,6 +123,22 @@ class Shell:
             console.print(f"  [{DIM}]columns[/]  " + ", ".join(f'"{c}"' for c in lv.columns))
         if lv.ordered and lv.order_note:
             console.print(f"  [{DIM}]sort   [/]  {lv.order_note}")
+        console.print()
+        self.print_expected(lv)
+
+    def print_expected(self, lv) -> None:
+        if not self.g.show_expected():
+            return
+        exp = self.g.expected(lv)
+        if not exp:
+            return
+        n = len(exp["rows"])
+        console.print(f"  [{DIM}]expected output · {n} row{'s' if n != 1 else ''}  (\\expected off to hide)[/]")
+        shown = exp["rows"][:12]
+        table = psql_table(exp["columns"], shown, numeric=exp["numeric"])
+        if n > len(shown):
+            table = table.rsplit("\n", 1)[0] + f"\n… {n - len(shown)} more ({n} rows)"
+        console.print(Text(textwrap.indent(table, "  "), style=DIM))
         console.print()
 
     def print_result(self, res) -> None:
@@ -330,6 +348,12 @@ class Shell:
             self.exam_show()
         elif cmd == "\\score":
             self.score()
+        elif cmd == "\\expected":
+            on = (args[0].lower() != "off") if args else not self.g.show_expected()
+            self.g.set_show_expected(on)
+            console.print(f"[{DIM}]expected output {'shown' if on else 'hidden'}[/]")
+            if on:
+                self.print_expected(self.g.exam.levels[self.exam_i] if self.g.exam else self.g.current())
         elif cmd == "\\ai":
             if not self.g.ai_available():
                 console.print("[yellow]No OPENAI_API_KEY in .env.[/]")
@@ -384,6 +408,7 @@ class Shell:
         if lv.ordered and lv.order_note:
             console.print(f"  [{DIM}]sort   [/]  {lv.order_note}")
         console.print()
+        self.print_expected(lv)
 
     def exam_sql(self, sql: str) -> None:
         res = self.g.exam_answer(self.exam_i, sql)

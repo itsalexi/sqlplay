@@ -23,6 +23,7 @@ pizza-# ...;
 - **Adaptive difficulty** for each topic, from level 1 to 5. Level 3 is a typical exam question,
   level 4 is the hardest exam questions, and level 5 goes beyond the exam. You can also lock one
   topic to drill it.
+- **Expected output shown under every question**, like an HOA handout. You can hide it for harder practice.
 - **Exam mode:** 10 mixed questions, no hints, an optional timer, and a full breakdown at the end.
 - **Feedback that teaches:** plain-English explanations of Postgres errors, plus checks for "too many
   rows: did you forget DISTINCT?", wrong sort order, and wrong labels.
@@ -66,6 +67,7 @@ Terminal commands (psql-style):
 | `\newworld [theme]` | Have the AI invent a new world (needs a key) |
 | `\exam [minutes]` | Start a mock exam |
 | `\score` | Show your progress |
+| `\expected on|off` | Show or hide the expected output under each question |
 | `\q` | Quit (progress is saved) |
 
 In the browser: `⌘↵` runs your query, `⌥H` shows a hint, `⌥A` gives up, `⌥S` skips, and `↵` moves to

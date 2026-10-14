@@ -128,6 +128,7 @@ class Game:
             "locked": self.locked,
             "score": st["score"],
             "streak": st["streak"],
+            "show_expected": st["show_expected"],
             "best_streak": st["best_streak"],
             "ai": self.ai_available(),
             "topics": [
@@ -249,6 +250,21 @@ class Game:
 
     def current(self) -> Level:
         return self.level or self.next_level()
+
+    def expected(self, lv: Level | None = None) -> dict | None:
+        """The level's expected output (like the result shown on an HOA handout)."""
+        lv = lv or self.current()
+        try:
+            res = grader.expected_result(self.db, lv)
+        except grader.LevelBroken:
+            return None
+        return {"columns": res.columns, "rows": [list(r) for r in res.display], "numeric": res.numeric}
+
+    def show_expected(self) -> bool:
+        return progress.stats(self.db)["show_expected"]
+
+    def set_show_expected(self, on: bool) -> None:
+        progress.set_show_expected(self.db, on)
 
     def needs_groupby_intro(self) -> bool:
         return (
