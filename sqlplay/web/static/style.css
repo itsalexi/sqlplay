@@ -396,3 +396,9 @@ pre.answer { margin: 14px 0 0 24px; padding: 14px 18px; border-radius: 12px; bac
 .q .meta .pin { color: var(--fg-3); font-size: 11px; margin-left: auto; }
 .q .meta .pin:hover { color: var(--fg); }
 @media (max-width: 900px) { .qbar { left: 0; } .qbar-in { padding: 8px 20px 10px; } }
+
+.set-sec { font: 600 10.5px var(--sans); letter-spacing: .09em; text-transform: uppercase; color: var(--fg-3); margin: 16px 0 2px; }
+.set-sec:first-of-type { margin-top: 4px; }
+.toggle-row.disabled { opacity: .4; }
+.set-note { margin: 10px 0 0 !important; font-size: 12px !important; color: var(--fg-3) !important; }
+.set-note code { font: 11.5px var(--mono); }

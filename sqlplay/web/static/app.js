@@ -609,30 +609,42 @@ function backToPractice() {
   ta().focus();
 }
 
-function aiSettings() {
+function aiSettings() { settingsSheet(); }
+
+function settingsSheet() {
   const st = S.status;
-  if (!st.ai) {
-    sheet({ html: `<h3>AI is off</h3><p>Add <code>OPENAI_API_KEY=…</code> to the <code>.env</code> file in the psqlay folder
-      and restart to enable AI feedback and AI-written levels. Everything else works without it.</p>`, ok: "OK", cancel: null });
-    return;
-  }
-  const row = (key, title, desc) => `
-    <div class="toggle-row" data-key="${key}">
-      <span class="t">${title}</span><button class="switch ${st[key] ? "on" : ""}" aria-label="${title}"></button>
+  const row = (key, title, desc, disabled) => `
+    <div class="toggle-row ${disabled ? "disabled" : ""}" data-key="${key}">
+      <span class="t">${title}</span><button class="switch ${st[key] ? "on" : ""}" aria-label="${title}" ${disabled ? "disabled" : ""}></button>
       <span class="d">${desc}</span>
     </div>`;
+  const aiNote = st.ai ? "" : `<p class="set-note">Add <code>OPENAI_API_KEY=…</code> to <code>.env</code> and restart to enable AI.</p>`;
   sheet({
-    html: `<h3>AI</h3>
-      ${row("ai_feedback", "Feedback", "Tutor nudges when you're wrong, tips when you're right. About $0.001 each.")}
-      ${row("ai_levels", "AI-written levels", "New exam-style levels made in the background. About $0.01 each.")}
-      <p style="margin:14px 0 0;font-size:12px">${S.models ? `models · ${esc(S.models.generate)} / ${esc(S.models.feedback)}` : ""}</p>`,
+    html: `<h3>Settings</h3>
+      <div class="set-sec">Practice</div>
+      ${row("groupby", "GROUP BY / HAVING", "Include this topic. Turn it off if it isn't on your exam.")}
+      ${row("show_expected", "Expected output", "Show the expected result under each question.")}
+      ${row("sticky_question", "Pin the question", "Keep the question visible while you scroll.")}
+      <div class="set-sec">AI</div>
+      ${row("ai_feedback", "Feedback", "Mini-lessons when you're wrong or right. About $0.001 each.", !st.ai)}
+      ${row("ai_levels", "AI-written levels", "New exam-style levels made in the background. About $0.01 each.", !st.ai)}
+      ${aiNote}
+      <p class="set-note">${S.models ? `models · ${esc(S.models.generate)} / ${esc(S.models.feedback)}` : ""}</p>`,
     ok: "Done", cancel: null,
-    onOpen: () => document.querySelectorAll(".toggle-row").forEach((r) => {
+    onOpen: () => document.querySelectorAll(".toggle-row:not(.disabled)").forEach((r) => {
       r.querySelector(".switch").onclick = async (e) => {
-        const on = !e.currentTarget.classList.contains("on");
-        e.currentTarget.classList.toggle("on", on);
-        S = await api("setting", { key: r.dataset.key, on });
-        renderBar();
+        const btn = e.currentTarget, on = !btn.classList.contains("on");
+        btn.classList.toggle("on", on);
+        const key = r.dataset.key;
+        const wasGroupby = key === "groupby" && !on && S.level && S.level.topic === "groupby";
+        S = await api("setting", { key, on });
+        renderBar(); renderRail();
+        if (wasGroupby || key === "show_expected" || key === "sticky_question") {
+          const keep = ta().value;
+          renderAll();
+          if (mode === "practice" && !wasGroupby) setEditor(keep);
+          if (wasGroupby) { $("out").innerHTML = ""; setEditor(""); toast("Swapped out the GROUP BY level"); }
+        }
       };
     }),
   });
@@ -685,7 +697,8 @@ function wire() {
     renderAll();
   };
   $("try-btn").onclick = tryRun;
-  $("ai-dot").onclick = aiSettings;
+  $("ai-dot").onclick = settingsSheet;
+  $("settings-btn").onclick = settingsSheet;
   $("world").onchange = async (e) => {
     toast("Switching world", { ms: 0, spin: true });
     try {

@@ -65,6 +65,10 @@ def in_syllabus(sql: str) -> bool:
     return not v.bad and sql.count("\n") <= 16
 
 
+def uses_groupby(sql: str) -> bool:
+    return bool(re.search(r"\b(GROUP\s+BY|HAVING)\b", sql, re.I))
+
+
 def preview(columns: list[str], rows: list, n: int = 8) -> str:
     if not columns:
         return "(no result)"
@@ -124,8 +128,16 @@ class Game:
     def setting(self, key: str) -> bool:
         return progress.stats(self.db)[key]
 
+    def groupby_on(self) -> bool:
+        return self.setting("groupby")
+
     def set_setting(self, key: str, on: bool) -> None:
         progress.set_setting(self.db, key, on)
+        if key == "groupby" and not on:
+            if self.locked == BONUS_TOPIC:
+                self.locked = None
+            if self.level and self.level.topic == BONUS_TOPIC:
+                self.level = None        # swap it out, no penalty
 
     def ai_feedback_on(self) -> bool:
         return self.ai_available() and self.setting("ai_feedback")
@@ -135,8 +147,8 @@ class Game:
 
     def status(self) -> dict:
         states = progress.topic_states(self.db)
-        unlocked = progress.unlocked_topics(states)
         st = progress.stats(self.db)
+        unlocked = progress.unlocked_topics(states, st["groupby"])
         w = worlds.get_world(self.db, self.world) or {}
         return {
             "world": {k: w.get(k) for k in ("slug", "name", "emoji", "blurb", "source")},
@@ -146,6 +158,7 @@ class Game:
             "streak": st["streak"],
             "show_expected": st["show_expected"],
             "sticky_question": st["sticky_question"],
+            "groupby": st["groupby"],
             "best_streak": st["best_streak"],
             "ai": self.ai_available(),
             "ai_feedback": self.ai_available() and st["ai_feedback"],
@@ -184,6 +197,8 @@ class Game:
     def set_topic(self, topic: str | None) -> None:
         if topic is not None and topic not in TOPICS:
             raise ValueError(f"Unknown topic {topic}. Topics: {', '.join(TOPICS)}")
+        if topic == BONUS_TOPIC and not self.groupby_on():
+            raise ValueError("GROUP BY is switched off. Turn it on with \\groupby on (or in Settings).")
         self.locked = topic
 
     def set_difficulty(self, topic: str, difficulty: int) -> None:
@@ -191,7 +206,7 @@ class Game:
 
     # ------------------------------------------------------------ picking
     def _choose_topic(self, states) -> str:
-        unlocked = progress.unlocked_topics(states)
+        unlocked = progress.unlocked_topics(states, self.groupby_on())
         pool = [t for t in unlocked if t != self.last_topic] or unlocked
         if self.rng.random() < 0.35:
             # focus on the weakest topic (lowest pass rate)
@@ -218,11 +233,15 @@ class Game:
              exclude: set[str] | None = None, review: bool = True) -> Level:
         states = progress.topic_states(self.db)
         topic = topic or self.locked or self._choose_topic(states)
+        if topic == BONUS_TOPIC and not self.groupby_on():
+            topic = self._choose_topic(states)
         diff = difficulty or states[topic].difficulty
         seen_full = progress.seen_levels(self.db, self.world)
         seen = {k: v[0] for k, v in seen_full.items()}
         exclude = exclude or set()
         stored = [lv for lv in self._stored_levels(topic) if lv.id not in exclude]
+        if not self.groupby_on():
+            stored = [lv for lv in stored if not uses_groupby(lv.answer)]
         source_rank = {"builtin": 0, "ai": 1, "generated": 2}
         self.is_review = False
 
@@ -447,7 +466,7 @@ class Game:
         try:
             spec = ai.generate_level(
                 self._schema_text(world), self._sample_text(world), topic, diff, examples,
-                [lv.question for lv in stored],
+                [lv.question for lv in stored], allow_groupby=self.groupby_on(),
             )
             lv = Level(
                 id=level_id(world, "ai", spec["question"], spec["answer"]),
@@ -462,6 +481,8 @@ class Game:
         if len(lv.hints) < 3 or generator.validate_spec(self.db, world, lv) is not None:
             return None
         if not in_syllabus(lv.answer) or len(lv.question) > 600:
+            return None
+        if uses_groupby(lv.answer) and not self.groupby_on():
             return None
         self._save(lv)
         return lv

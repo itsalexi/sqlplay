@@ -69,3 +69,23 @@ def test_restarts_stopped_server(db):
     db.cluster.stop()
     with db.app() as conn:
         assert conn.execute("SELECT 1").fetchone()[0] == 1
+
+
+def test_groupby_switch_off(db):
+    g = _game(db)
+    g.set_setting("groupby", True)
+    g.next_level("groupby")
+    assert g.level.topic == "groupby"
+    g.set_setting("groupby", False)
+    assert g.level is None                      # swapped out, no penalty
+    st = g.status()
+    assert not next(t for t in st["topics"] if t["topic"] == "groupby")["unlocked"]
+    for _ in range(25):
+        lv = g.next_level()
+        assert lv.topic != "groupby" and "GROUP BY" not in lv.answer.upper()
+    ex = g.start_exam()
+    assert all("GROUP BY" not in lv.answer.upper() for lv in ex.levels)
+    import pytest
+    with pytest.raises(ValueError):
+        g.set_topic("groupby")
+    g.set_setting("groupby", True)

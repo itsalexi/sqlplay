@@ -81,6 +81,7 @@ def stats(db: Database) -> dict:
         "groupby_intro_seen": bool(rows.get("groupby_intro_seen", False)),
         "show_expected": bool(rows.get("show_expected", True)),
         "sticky_question": bool(rows.get("sticky_question", True)),
+        "groupby": bool(rows.get("groupby", True)),
         "ai_feedback": bool(rows.get("ai_feedback", True)),
         "ai_levels": bool(rows.get("ai_levels", True)),
     }
@@ -94,7 +95,7 @@ def _set_stat(conn, key: str, value) -> None:
     )
 
 
-SETTINGS = ("show_expected", "ai_feedback", "ai_levels", "sticky_question")
+SETTINGS = ("show_expected", "ai_feedback", "ai_levels", "sticky_question", "groupby")
 
 
 def set_setting(db: Database, key: str, on: bool) -> None:
@@ -113,8 +114,10 @@ def mark_groupby_intro_seen(db: Database) -> None:
         _set_stat(conn, "groupby_intro_seen", True)
 
 
-def unlocked_topics(states: dict[str, TopicState]) -> list[str]:
+def unlocked_topics(states: dict[str, TopicState], groupby_on: bool = True) -> list[str]:
     topics = list(CORE_TOPICS)
+    if not groupby_on:
+        return topics
     if states["aggregates"].passed >= GROUPBY_UNLOCK_PASSES or states[BONUS_TOPIC].attempted > 0:
         topics.append(BONUS_TOPIC)
     return topics
@@ -135,9 +138,9 @@ def record_result(db: Database, level: Level, *, passed: bool, hints_used: int =
     with test queries is free.
     """
     states = topic_states(db)
-    before_unlocked = set(unlocked_topics(states))
-    s = states[level.topic]
     st = stats(db)
+    before_unlocked = set(unlocked_topics(states, st["groupby"]))
+    s = states[level.topic]
     out = Outcome(difficulty_before=s.difficulty)
     s.attempted += 1
     if passed:
@@ -164,7 +167,7 @@ def record_result(db: Database, level: Level, *, passed: bool, hints_used: int =
             for k in ("score", "streak", "best_streak"):
                 _set_stat(conn, k, st[k])
     states[level.topic] = s
-    newly = set(unlocked_topics(states)) - before_unlocked
+    newly = set(unlocked_topics(states, st["groupby"])) - before_unlocked
     out.unlocked = next(iter(newly), None)
     out.score, out.streak, out.best_streak = st["score"], st["streak"], st["best_streak"]
     out.difficulty_after = s.difficulty

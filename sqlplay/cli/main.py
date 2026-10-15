@@ -59,6 +59,7 @@ HELP = r"""
 [bold]Settings[/]
   \expected on|off         expected output under each question
   \sticky on|off           keep the question pinned at the bottom while you type
+  \groupby on|off          include the GROUP BY / HAVING topic (off if it's not on your exam)
   \ai                      show AI settings
   \ai feedback on|off      AI tutor feedback and tips
   \ai levels on|off        AI-written levels (generated in the background)
@@ -80,7 +81,7 @@ your rows, but not whether it's right). Revise as often as you like.
   \quit                    abandon the exam
 """
 
-COMMANDS = ["\\sticky", "\\hint", "\\skip", "\\answer", "\\level", "\\dt", "\\d", "\\map", "\\topic", "\\mix", "\\world",
+COMMANDS = ["\\groupby", "\\sticky", "\\hint", "\\skip", "\\answer", "\\level", "\\dt", "\\d", "\\map", "\\topic", "\\mix", "\\world",
             "\\newworld", "\\exam", "\\expected", "\\ai", "\\score", "\\help", "\\q", "\\next", "\\prev",
             "\\go", "\\list", "\\submit", "\\quit"]
 ALIASES = {"\\l": "\\world", "\\?": "\\help", "\\h": "\\help", "\\exit": "\\q", "\\giveup": "\\answer", "\\n": "\\next",
@@ -545,6 +546,14 @@ class Shell:
                 self.print_expected(self.g.exam.levels[self.exam_i] if self.g.exam else self.g.current())
         elif cmd == "\\ai":
             self.ai_settings(args)
+        elif cmd == "\\groupby":
+            on = (args[0].lower() != "off") if args else not self.g.groupby_on()
+            was_groupby = self.g.level is not None and self.g.level.topic == "groupby"
+            self.g.set_setting("groupby", on)
+            console.print(f"[{DIM}]GROUP BY / HAVING topic: {'on' if on else 'off (hidden from mix, topics and exams)'}[/]")
+            if not on and was_groupby:
+                console.print(f"[{DIM}]swapping out the current GROUP BY level (no penalty)[/]")
+                self.show_level()
         elif cmd == "\\sticky":
             self.sticky = (args[0].lower() != "off") if args else not self.sticky
             self.g.set_setting("sticky_question", self.sticky)
@@ -592,7 +601,10 @@ class Shell:
     def topics(self) -> None:
         st = self.g.status()
         for t in st["topics"]:
-            lock = "" if t["unlocked"] else "  [dim](locked: pass 3 aggregate levels)[/]"
+            if t["topic"] == "groupby" and not st.get("groupby", True):
+                lock = f"  [{DIM}](off · \\groupby on to include)[/]"
+            else:
+                lock = "" if t["unlocked"] else "  [dim](locked: pass 3 aggregate levels)[/]"
             mark = "→" if st["locked"] == t["topic"] else " "
             console.print(f" {mark} [bold]{t['topic']:11}[/] {t['name']:32} level {t['difficulty']}   "
                           f"passed {t['passed']}/{t['attempted']}{lock}")

@@ -179,6 +179,7 @@ TOPIC_GUIDE = {
 
 def generate_level(
     schema_text: str, sample_text: str, topic: str, difficulty: int, examples: list[dict], avoid_questions: list[str],
+    allow_groupby: bool = True,
 ) -> dict:
     ex = "\n\n".join(
         f"EXAMPLE (topic {e['topic']}, difficulty {e['difficulty']}):\nQ: {e['question']}\nA: {e['answer']}"
@@ -189,6 +190,7 @@ def generate_level(
         f"DATABASE SCHEMA:\n{schema_text}\n\nSAMPLE DATA:\n{sample_text}\n\n{ex}\n\n"
         f"Write a NEW question. Topic: {topic} ({TOPIC_GUIDE.get(topic, topic)}). Difficulty: {difficulty}.\n"
         f"Do not repeat these existing questions:\n{avoid or '(none)'}"
+        + ("" if allow_groupby else "\nGROUP BY and HAVING are NOT on this student's exam: do not use them.")
     )
     return _json(gen_model(), config.get("OPENAI_LEVEL_EFFORT", "medium"), LEVEL_RULES, prompt)
 
