@@ -101,6 +101,27 @@ def ai_line(text: str, indent: int = 2) -> None:
     console.print(f"[{BLUE}]{tag}[/]" + Text(body[len(tag):]).markup)
 
 
+def ai_lesson(lesson: dict, indent: int = 2) -> None:
+    """Print an AI mini-lesson: concept, why, example, what to look at, something to try."""
+    if not lesson:
+        return
+    pad = " " * indent
+    width = min(console.width, 100)
+    head = lesson.get("concept") or "tip"
+    console.print(f"{pad}[{BLUE}]ai ·[/] [bold]{Text(head).markup}[/]")
+    rows = [("why", "explain", None), ("e.g.", "example", DIM), ("look", "nudge", None), ("try", "try", AMBER)]
+    for label, key, style in rows:
+        val = lesson.get(key)
+        if not val:
+            continue
+        lead = f"{pad}  {label:<5}"
+        body = textwrap.fill(val, width=width, initial_indent=lead, subsequent_indent=" " * len(lead))
+        text = Text(body[len(lead):])
+        if style:
+            text.stylize(style)
+        console.print(Text(lead, style=DIM if key != "try" else AMBER) + text)
+
+
 class Shell:
     def __init__(self, game):
         self.g = game
@@ -299,9 +320,10 @@ class Shell:
                 console.print(f"[{ACC}]✓ still correct[/]")
             if self.ai_on:
                 with console.status(f"[{DIM}]ai[/]", spinner="dots"):
-                    tip = self.g.pass_tip(sql)
-                if tip:
-                    ai_line(tip)
+                    lesson = self.g.pass_tip(sql)
+                if lesson:
+                    console.print()
+                    ai_lesson(lesson)
             console.print(f"[{DIM}]↵ next level[/]")
             try:
                 self.session.prompt("")
@@ -327,9 +349,10 @@ class Shell:
                 with console.status(f"[{DIM}]ai thinking · ctrl-c to skip[/]", spinner="dots"):
                     nudge = self.g.tutor(sql, v)
             except KeyboardInterrupt:
-                nudge = ""
+                nudge = {}
             if nudge:
-                ai_line(nudge)
+                console.print()
+                ai_lesson(nudge)
 
     def next(self, topic: str | None = None) -> None:
         if self.g.ai_available() and self.ai_on:

@@ -31,13 +31,13 @@ def test_same_count_message(db, mini):
 def test_ai_feedback_setting_respected(db, monkeypatch):
     g = _game(db)
     monkeypatch.setattr(ai, "available", lambda: True)
-    monkeypatch.setattr(ai, "tutor_feedback", lambda *a, **k: "nudge")
+    monkeypatch.setattr(ai, "tutor_feedback", lambda *a, **k: {"concept": "c", "nudge": "nudge"})
     lv = g.next_level("select")
     v = g.submit("SELECT 1")["verdict"]
     g.set_setting("ai_feedback", False)
-    assert g.tutor("SELECT 1", v) == ""
+    assert g.tutor("SELECT 1", v) == {}
     g.set_setting("ai_feedback", True)
-    assert g.tutor("SELECT 1", v) == "nudge"
+    assert g.tutor("SELECT 1", v)["nudge"] == "nudge"
 
 
 def test_ai_levels_setting_blocks_prefetch(db, monkeypatch):

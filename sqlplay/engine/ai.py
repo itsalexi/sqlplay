@@ -69,48 +69,74 @@ def feedback_model() -> str:
 
 
 # ------------------------------------------------------------------ feedback
-TUTOR_RULES = """You are a patient SQL tutor for a beginner practising PostgreSQL for a hands-on exam.
+TUTOR_RULES = """You are a patient SQL teacher for a beginner practising PostgreSQL for a hands-on exam.
 The student knows: SELECT/WHERE, AS labels, CONCAT, ORDER BY, DISTINCT, MAX/MIN/AVG/COUNT,
 subqueries, JOIN ... ON chains, self-joins, LEFT JOIN ... IS NULL, and is learning GROUP BY/HAVING.
+TEACH, don't just tell: name the underlying idea, explain WHY it works the way it does (the mental
+model), and give the student something to try so they discover it themselves.
 Rules:
-- Point at WHAT TO RECONSIDER. Never give the corrected query or the full answer.
-- Mention only the ONE most important problem (two at most). Don't list every missing piece,
-  don't spell out values, dates, or complete clauses: the student should still have to think.
-- Be specific to their query: name the clause, column or condition that's off.
-- 1-3 short sentences, plain English, friendly. No headings, no code blocks.
-- You may quote a tiny fragment of THEIR query, or name a keyword (e.g. DISTINCT, LEFT JOIN).
-- Any JOIN style (ON, WHERE equijoin, NATURAL JOIN) is fine if it gives the right rows."""
+- Plain English, friendly, short. Every field is ONE or TWO sentences at most.
+- Examples must use DIFFERENT tables/columns/values than the question (a generic toy table like
+  students(name, grade, city) is ideal) so they illustrate the idea without solving the task.
+- Any JOIN style (ON, WHERE equijoin, NATURAL JOIN) is fine if it gives the right rows.
+- No markdown, no headings, no code fences. SQL inside example fields is plain one-line text."""
+
+LESSON_KEYS = ("concept", "explain", "example", "nudge", "try")
+
+
+def _lesson(d: dict) -> dict:
+    """Keep only short string fields we know how to show."""
+    out = {}
+    for k in LESSON_KEYS:
+        v = d.get(k)
+        if isinstance(v, str) and v.strip():
+            out[k] = " ".join(v.split())[:400]
+    return out
 
 
 def tutor_feedback(
     question: str, user_sql: str, problem: str, rule_tip: str, answer_sql: str,
     expected_preview: str, user_preview: str,
-) -> str:
+) -> dict:
+    """A short lesson about the student's main mistake. Never reveals the answer."""
     prompt = (
         f"QUESTION:\n{question}\n\nSTUDENT QUERY:\n{user_sql}\n\nGRADER SAYS: {problem}\n"
         f"RULE-BASED TIP ALREADY SHOWN: {rule_tip or '(none)'}\n\n"
         f"STUDENT RESULT (sample):\n{user_preview}\n\nEXPECTED RESULT (sample):\n{expected_preview}\n\n"
-        f"REFERENCE ANSWER (secret, do not reveal):\n{answer_sql}\n\n"
-        "Write the nudge. Add something beyond the rule-based tip if you can."
+        f"REFERENCE ANSWER (secret, NEVER reveal or paraphrase it):\n{answer_sql}\n\n"
+        "Find the ONE most important misunderstanding and teach it. Return JSON with:\n"
+        '  "concept": 2-5 word name of the idea (e.g. "LEFT JOIN keeps unmatched rows"),\n'
+        '  "explain": the mental model: why SQL behaves this way (1-2 sentences, general, not their query),\n'
+        '  "example": a tiny one-line SQL on a DIFFERENT toy table showing the idea, or "" if not useful,\n'
+        '  "nudge": what to reconsider in THEIR query: name the clause/condition, but don\'t give the fix,\n'
+        '  "try": a question or small experiment for them (e.g. run part of the query with \\g and compare).\n'
+        "Don't spell out the values, dates, or complete clauses they need."
     )
-    return _call(feedback_model(), "low", TUTOR_RULES, prompt, json_out=False).strip()
+    return _lesson(_json(feedback_model(), "low", TUTOR_RULES, prompt))
 
 
-def pass_tip(question: str, user_sql: str, answer_sql: str) -> str:
+def pass_tip(question: str, user_sql: str, answer_sql: str) -> dict:
+    """After a correct answer: teach one transferable idea (a cleaner form, an alternative, a pitfall avoided)."""
     prompt = (
         f"QUESTION:\n{question}\n\nSTUDENT QUERY (correct!):\n{user_sql}\n\nREFERENCE:\n{answer_sql}\n\n"
-        "In ONE short sentence, give a useful tip: a shorter/cleaner way, an alternative style they "
-        "could also use, or a pitfall they avoided. If there's nothing useful, reply exactly: NONE"
+        "The student got it right. Teach ONE transferable idea from this query: a cleaner or shorter form, an "
+        "alternative style they should recognise on an exam, or a pitfall they avoided and why it matters. "
+        "Return JSON with:\n"
+        '  "concept": 2-5 word name of the idea,\n'
+        '  "explain": why it works / when to use it / when NOT to (1-2 sentences),\n'
+        '  "example": a one-line before/after or illustration on a DIFFERENT toy table,\n'
+        '  "try": a tiny experiment, e.g. "rewrite your WHERE with IN and run it with \\g: same rows?".\n'
+        'If there is genuinely nothing worth teaching, return {"concept": ""}.'
     )
-    text = _call(feedback_model(), "low", TUTOR_RULES, prompt, json_out=False).strip()
-    return "" if text.upper().startswith("NONE") else text
+    return _lesson(_json(feedback_model(), "low", TUTOR_RULES, prompt))
 
 
 def exam_comment(question: str, user_sql: str, verdict: str, answer_sql: str) -> str:
     prompt = (
         f"QUESTION:\n{question}\n\nSTUDENT QUERY:\n{user_sql or '(left blank)'}\n\nRESULT: {verdict}\n\n"
         f"REFERENCE ANSWER:\n{answer_sql}\n\n"
-        "This is the end-of-exam review, so you MAY now explain the fix. 1-3 sentences."
+        "This is the end-of-exam review, so you MAY explain the fix now. In 2-3 plain sentences: what "
+        "they misunderstood, the idea that fixes it, and how the reference applies it. No markdown."
     )
     return _call(feedback_model(), "low", TUTOR_RULES, prompt, json_out=False).strip()
 

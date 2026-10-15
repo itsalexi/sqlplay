@@ -270,6 +270,13 @@ textarea::placeholder { color: var(--fg-3); }
 .ai { margin: 12px 0 0 24px; display: grid; grid-template-columns: auto 1fr; gap: 10px; max-width: 66ch; }
 .ai .tag { color: var(--blue); font-size: 10.5px; letter-spacing: .08em; padding-top: 3px; }
 .ai .txt { color: var(--fg); font-family: var(--sans); font-size: 13.5px; line-height: 1.55; }
+.ai.lesson .concept { font-weight: 600; margin-bottom: 4px; }
+.ai.lesson dl { display: grid; grid-template-columns: 38px 1fr; gap: 3px 10px; margin: 0; }
+.ai.lesson dt { color: var(--fg-3); font: 11px var(--mono); padding-top: 3px; }
+.ai.lesson dd { margin: 0; color: var(--fg-2); }
+.ai.lesson dd.nudge { color: var(--fg); }
+.ai.lesson dt.try, .ai.lesson dd.try { color: var(--amber); }
+.ai.lesson code { font: 12px var(--mono); color: var(--fg); background: var(--bg-3); padding: 2px 6px; border-radius: 5px; }
 .ai.loading .txt {
   color: transparent; border-radius: 6px; height: 1.1em; width: 280px; margin-top: 3px;
   background: linear-gradient(90deg, var(--bg-3), var(--hair-2), var(--bg-3)); background-size: 200% 100%;

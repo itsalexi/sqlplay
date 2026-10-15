@@ -76,6 +76,15 @@ function psqlTable(columns, rows, truncated, numeric) {
   return `<pre class="table"><span class="h"> ${head}</span>\n<span class="rule">-${rule}-</span>\n${body}${n ? "\n" : ""}<span class="foot">${foot}</span></pre>`;
 }
 
+function lessonHTML(l) {
+  const rows = [["why", "explain"], ["e.g.", "example"], ["look", "nudge"], ["try", "try"]]
+    .filter(([, k]) => l[k])
+    .map(([label, k]) => `<dt class="${k}">${label}</dt><dd class="${k}">${k === "example" ? `<code>${esc(l[k])}</code>` : esc(l[k])}</dd>`)
+    .join("");
+  return `<div class="ai lesson"><span class="tag">AI</span><div class="txt">
+    ${l.concept ? `<div class="concept">${esc(l.concept)}</div>` : ""}<dl>${rows}</dl></div></div>`;
+}
+
 function diffHTML(v) {
   const parts = [];
   const res = v.result || {};
@@ -346,7 +355,7 @@ async function run() {
       ta().blur();
       if (S.status.ai_feedback) {
         api("pass_tip", { sql }).then((r) => {
-          if (r.text && $("ai-slot")) $("ai-slot").innerHTML = `<div class="ai"><span class="tag">AI</span><span class="txt">${esc(r.text)}</span></div>`;
+          if (r.lesson && Object.keys(r.lesson).length && $("ai-slot")) $("ai-slot").innerHTML = lessonHTML(r.lesson);
         }).catch(() => {});
       }
     } else {
@@ -362,7 +371,7 @@ async function run() {
         api("tutor", { sql }).then((r) => {
           const el = $("ai-line");
           if (!el || lastSQL !== sql) return;
-          if (r.text) { el.className = "ai"; el.querySelector(".txt").textContent = r.text; } else el.remove();
+          if (r.lesson && Object.keys(r.lesson).length) el.outerHTML = lessonHTML(r.lesson); else el.remove();
         }).catch(() => $("ai-line")?.remove());
       }
     }

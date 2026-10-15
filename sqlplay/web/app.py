@@ -158,11 +158,11 @@ def create_app(game: Game, port: int = 8000) -> FastAPI:
         with lock:
             lv = game.current()
             v = grader.grade(game.db, lv, body.sql)
-        return {"text": game.tutor(body.sql, v) if not v.passed else ""}
+        return {"lesson": game.tutor(body.sql, v) if not v.passed else {}}
 
     @app.post("/api/pass_tip")
     def pass_tip(body: SQLBody):
-        return {"text": game.pass_tip(body.sql)}
+        return {"lesson": game.pass_tip(body.sql)}
 
     @app.post("/api/hint")
     def hint():

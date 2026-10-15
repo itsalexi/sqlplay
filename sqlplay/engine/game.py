@@ -17,7 +17,7 @@ from .validator import WorldSQLError
 EXAM_PLAN = [3, 3, 3, 4, 4, 4, 4, 4, 5, 5]
 EXAM_TOPICS = ["subqueries", "joins", "selfleft", "subqueries", "joins", "shape", "aggregates", "selfleft",
                "subqueries", "joins"]
-PASS_TIP_CHANCE = 0.35
+PASS_TIP_CHANCE = 0.5
 REVIEW_AFTER = 15 * 60      # seconds before a missed level can come back
 REVIEW_CHANCE = 0.3
 
@@ -341,29 +341,33 @@ class Game:
             self.passed = True
         return out
 
-    def tutor(self, sql: str, verdict: grader.Verdict) -> str:
-        """AI nudge for a failed attempt (empty string if unavailable)."""
+    def tutor(self, sql: str, verdict: grader.Verdict) -> dict:
+        """AI mini-lesson for a failed attempt: {concept, explain, example, nudge, try} ({} if off)."""
         if not self.ai_feedback_on() or verdict.passed:
-            return ""
+            return {}
         lv = self.current()
         exp = grader.expected_result(self.db, lv)
         res = verdict.result
         user_prev = res.error.psql_text(res.sql) if res and not res.ok else preview(res.columns, res.rows) if res else ""
         try:
-            return ai.tutor_feedback(
+            out = ai.tutor_feedback(
                 lv.question, sql, verdict.message, verdict.tip, lv.answer,
                 preview(exp.columns, exp.rows), user_prev,
             )
-        except ai.AIError:
-            return ""
+        except (ai.AIError, ValueError):
+            return {}
+        return {"nudge": out} if isinstance(out, str) else out
 
-    def pass_tip(self, sql: str) -> str:
+    def pass_tip(self, sql: str) -> dict:
+        """AI mini-lesson after a correct answer, about half the time ({} otherwise)."""
         if not self.ai_feedback_on() or self.rng.random() > PASS_TIP_CHANCE:
-            return ""
+            return {}
         try:
-            return ai.pass_tip(self.current().question, sql, self.current().answer)
-        except ai.AIError:
-            return ""
+            out = ai.pass_tip(self.current().question, sql, self.current().answer)
+        except (ai.AIError, ValueError):
+            return {}
+        out = {"explain": out} if isinstance(out, str) else out
+        return out if out.get("concept") or out.get("explain") else {}
 
     def give_up(self) -> dict:
         lv = self.current()
