@@ -10,7 +10,9 @@ import textwrap
 import time
 
 from prompt_toolkit import PromptSession
+from prompt_toolkit.application.current import get_app
 from prompt_toolkit.completion import WordCompleter
+from prompt_toolkit.styles import Style as PTStyle
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.lexers import PygmentsLexer
 from pygments.lexers.sql import PostgresLexer
@@ -56,6 +58,7 @@ HELP = r"""
 
 [bold]Settings[/]
   \expected on|off         expected output under each question
+  \sticky on|off           keep the question pinned at the bottom while you type
   \ai                      show AI settings
   \ai feedback on|off      AI tutor feedback and tips
   \ai levels on|off        AI-written levels (generated in the background)
@@ -77,7 +80,7 @@ your rows, but not whether it's right). Revise as often as you like.
   \quit                    abandon the exam
 """
 
-COMMANDS = ["\\hint", "\\skip", "\\answer", "\\level", "\\dt", "\\d", "\\map", "\\topic", "\\mix", "\\world",
+COMMANDS = ["\\sticky", "\\hint", "\\skip", "\\answer", "\\level", "\\dt", "\\d", "\\map", "\\topic", "\\mix", "\\world",
             "\\newworld", "\\exam", "\\expected", "\\ai", "\\score", "\\help", "\\q", "\\next", "\\prev",
             "\\go", "\\list", "\\submit", "\\quit"]
 ALIASES = {"\\l": "\\world", "\\?": "\\help", "\\h": "\\help", "\\exit": "\\q", "\\giveup": "\\answer", "\\n": "\\next",
@@ -127,14 +130,78 @@ class Shell:
         self.g = game
         home_dir().mkdir(parents=True, exist_ok=True)
         self.completer = WordCompleter([], ignore_case=True, sentence=True)
+        self.sticky = game.setting("sticky_question")
         self.session = PromptSession(
             history=FileHistory(str(home_dir() / "history")),
             lexer=PygmentsLexer(PostgresLexer),
             completer=self.completer,
             complete_while_typing=False,
+            bottom_toolbar=self.toolbar,
+            style=PTStyle.from_dict({
+                "bottom-toolbar": "noreverse bg:#111317 #a4a7ae",
+                "bottom-toolbar.meta": "#63676f",
+                "bottom-toolbar.q": "#e8e8ea",
+                "bottom-toolbar.dots": "#8be9b0",
+            }),
         )
         self.exam_i = 0
         self.refresh_completions()
+
+    def toolbar(self):
+        """Pinned question at the bottom of the terminal while you type (\\sticky to toggle)."""
+        if not self.sticky:
+            return None
+        try:
+            if self.g.exam:
+                lv = self.g.exam.levels[self.exam_i]
+                meta = f" question {self.exam_i + 1}/{len(self.g.exam.levels)} · {lv.points} pts"
+            else:
+                lv = self.g.level
+                if lv is None:
+                    return None
+                meta = f" level {lv.difficulty} · {TOPICS.get(lv.topic, lv.topic).lower()} · {lv.points} pts"
+            width = max(40, min(get_app().output.get_size().columns, 110) - 2)
+            lines = textwrap.wrap(" ".join(lv.question.split()), width=width - 1)
+            if len(lines) > 3:
+                lines = lines[:3]
+                lines[-1] = lines[-1][: width - 2] + "…"
+            parts = [("class:bottom-toolbar.dots", " " + "●" * lv.difficulty), ("class:bottom-toolbar.meta", meta)]
+            if lv.columns:
+                parts.append(("class:bottom-toolbar.meta", "  ·  cols " + ", ".join(f'"{c}"' for c in lv.columns)))
+            if lv.ordered and lv.order_note:
+                parts.append(("class:bottom-toolbar.meta", "  ·  sort " + lv.order_note))
+            for ln in lines:
+                parts.append(("", "\n"))
+                parts.append(("class:bottom-toolbar.q", " " + ln))
+            for ln in self._expected_lines(lv, width):
+                parts.append(("", "\n"))
+                parts.append(("class:bottom-toolbar.meta", " " + ln))
+            return parts
+        except Exception:  # noqa: BLE001 - never break the prompt
+            return None
+
+    def _expected_lines(self, lv, width: int, max_rows: int = 5) -> list[str]:
+        """Compact expected-output table for the pinned bar (cached per level)."""
+        key = (lv.id, self._show_expected_cached)
+        if getattr(self, "_exp_cache_key", None) == key:
+            return self._exp_cache
+        lines: list[str] = []
+        if self._show_expected_cached:
+            exp = self.g.expected(lv)
+            if exp:
+                n = len(exp["rows"])
+                table = psql_table(exp["columns"], exp["rows"][:max_rows], numeric=exp["numeric"]).split("\n")[:-1]
+                lines = [ln[:width] for ln in table]
+                lines.append(f"({n} row{'s' if n != 1 else ''}" + (f", first {max_rows} shown)" if n > max_rows else ")"))
+                lines.insert(0, "expected")
+        self._exp_cache_key, self._exp_cache = key, lines
+        return lines
+
+    @property
+    def _show_expected_cached(self) -> bool:
+        if not hasattr(self, "_show_exp"):
+            self._show_exp = self.g.show_expected()
+        return self._show_exp
 
     @property
     def ai_on(self) -> bool:
@@ -232,6 +299,21 @@ class Shell:
                 return None
             if not lines and line.strip().startswith("\\"):
                 return line.strip(), False
+            if lines and line.strip().startswith("\\"):
+                # psql-style: backslash commands work mid-query and keep the query buffer
+                cmd = line.strip()
+                if cmd in ("\\g", "\\run"):
+                    return "\n".join(lines).strip(), True
+                if cmd in ("\\r", "\\reset"):
+                    lines = []
+                    console.print(f"[{DIM}]query buffer reset[/]")
+                    continue
+                try:
+                    if self.command(cmd) == "quit":
+                        return None
+                except Exception as e:  # noqa: BLE001
+                    console.print(f"[{RED}]error:[/] {e}")
+                continue
             lines.append(line)
             text = "\n".join(lines).strip()
             if not text:
@@ -457,11 +539,16 @@ class Shell:
         elif cmd == "\\expected":
             on = (args[0].lower() != "off") if args else not self.g.show_expected()
             self.g.set_show_expected(on)
+            self._show_exp = on
             console.print(f"[{DIM}]expected output {'shown' if on else 'hidden'}[/]")
             if on:
                 self.print_expected(self.g.exam.levels[self.exam_i] if self.g.exam else self.g.current())
         elif cmd == "\\ai":
             self.ai_settings(args)
+        elif cmd == "\\sticky":
+            self.sticky = (args[0].lower() != "off") if args else not self.sticky
+            self.g.set_setting("sticky_question", self.sticky)
+            console.print(f"[{DIM}]question pinned at the bottom: {'on' if self.sticky else 'off'}[/]")
         else:
             near = difflib.get_close_matches(cmd, COMMANDS, n=1, cutoff=0.5)
             hint = f"did you mean {near[0]}?  " if near else ""

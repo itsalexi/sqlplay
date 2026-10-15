@@ -145,6 +145,7 @@ class Game:
             "score": st["score"],
             "streak": st["streak"],
             "show_expected": st["show_expected"],
+            "sticky_question": st["sticky_question"],
             "best_streak": st["best_streak"],
             "ai": self.ai_available(),
             "ai_feedback": self.ai_available() and st["ai_feedback"],

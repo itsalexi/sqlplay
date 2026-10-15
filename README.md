@@ -109,7 +109,7 @@ psqlay web      # browser · http://127.0.0.1:8000
 | `\topic <name>` · `\mix` · `\level <topic> <1-5>` | Drill one topic · back to the mix · set your level |
 | `\world [name]` · `\newworld [theme]` | Switch world · have the AI invent one |
 | `\exam [minutes]` | Mock exam (`\next` · `\prev` · `\submit`) |
-| `\expected on\|off` · `\ai` | Expected output · AI settings |
+| `\expected on\|off` · `\sticky on\|off` · `\ai` | Expected output · pinned question bar · AI settings |
 | `\score` · `\help` · `\q` | Stats · help · quit |
 
 </details>

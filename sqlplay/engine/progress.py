@@ -80,6 +80,7 @@ def stats(db: Database) -> dict:
         "best_streak": int(rows.get("best_streak", 0)),
         "groupby_intro_seen": bool(rows.get("groupby_intro_seen", False)),
         "show_expected": bool(rows.get("show_expected", True)),
+        "sticky_question": bool(rows.get("sticky_question", True)),
         "ai_feedback": bool(rows.get("ai_feedback", True)),
         "ai_levels": bool(rows.get("ai_levels", True)),
     }
@@ -93,7 +94,7 @@ def _set_stat(conn, key: str, value) -> None:
     )
 
 
-SETTINGS = ("show_expected", "ai_feedback", "ai_levels")
+SETTINGS = ("show_expected", "ai_feedback", "ai_levels", "sticky_question")
 
 
 def set_setting(db: Database, key: str, on: bool) -> None:

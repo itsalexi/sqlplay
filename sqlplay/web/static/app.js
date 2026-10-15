@@ -253,7 +253,40 @@ function renderQuestion(lv, metaText) {
   if (lv.ordered && lv.order_note) rows.push(["sort", esc(lv.order_note)]);
   $("q-reqs").innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
   renderExpected(lv.expected);
+  renderQbar(lv, metaText, rows);
 }
+
+// ---- pinned question bar
+let qbarExp = null;   // null = follow the "show expected output" setting
+const qbExpOn = () => (qbarExp === null ? !!S.status.show_expected : qbarExp);
+function renderQbar(lv, metaText, rows) {
+  $("qb-dots").innerHTML = $("q-dots").innerHTML;
+  $("qb-meta").textContent = metaText;
+  $("qb-text").textContent = lv.question;
+  $("qb-text").classList.remove("full");
+  $("qb-reqs").innerHTML = rows.map(([k, v]) => `${k} ${v}`).join(" &nbsp;·&nbsp; ");
+  const exp = lv.expected;
+  $("qb-exp").hidden = !exp;
+  $("qb-exp").classList.toggle("on", qbExpOn());
+  $("qb-expected").hidden = !(exp && qbExpOn());
+  if (exp && qbExpOn()) $("qb-expected").innerHTML = psqlTable(exp.columns, exp.rows, false, exp.numeric);
+  const pinned = S.status.sticky_question;
+  let pin = document.querySelector(".q .meta .pin");
+  if (!pinned && !pin) {
+    $("q-meta").insertAdjacentHTML("afterend", `<button class="pin" title="Keep the question visible while you scroll">pin question</button>`);
+    pin = document.querySelector(".q .meta .pin");
+    pin.onclick = async () => { S = await api("setting", { key: "sticky_question", on: true }); pin.remove(); updateQbar(); };
+  } else if (pinned && pin) pin.remove();
+  updateQbar();
+}
+
+let qVisible = true;
+function updateQbar() {
+  const show = !qVisible && mode !== "report" && S && S.status.sticky_question && $("sheet").hidden;
+  $("qbar").hidden = !show;
+}
+new IntersectionObserver((entries) => { qVisible = entries[0].isIntersecting; updateQbar(); },
+  { rootMargin: "-52px 0px 0px 0px" }).observe(document.getElementById("q"));
 
 function renderExpected(exp) {
   const el = $("expected");
@@ -638,6 +671,19 @@ function wire() {
   });
 
   $("run-btn").onclick = run;
+  $("qb-text").onclick = () => $("qb-text").classList.toggle("full");
+  $("qb-exp").onclick = () => {
+    qbarExp = !qbExpOn();
+    const lv = mode === "exam" ? S.exam.questions[examIndex] : S.level;
+    $("qb-exp").classList.toggle("on", qbarExp);
+    $("qb-expected").hidden = !(lv.expected && qbarExp);
+    if (lv.expected && qbarExp) $("qb-expected").innerHTML = psqlTable(lv.expected.columns, lv.expected.rows, false, lv.expected.numeric);
+  };
+  $("qb-close").onclick = async () => {
+    S = await api("setting", { key: "sticky_question", on: false });
+    updateQbar();
+    renderAll();
+  };
   $("try-btn").onclick = tryRun;
   $("ai-dot").onclick = aiSettings;
   $("world").onchange = async (e) => {
